@@ -13,8 +13,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: resfit:latest
-    container_name: resfit-train
+    image: qte9489-resfit:latest
+    container_name: qte9489-resfit-train
 
     # ── GPU access ──
     deploy:
