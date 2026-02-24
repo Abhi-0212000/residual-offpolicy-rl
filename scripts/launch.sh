@@ -58,8 +58,9 @@ echo "  Script:    $SCRIPT"
 echo "  Container: qte9489-resfit-train"
 echo ""
 
-# Create tmux session running docker compose
-tmux new-session -d -s "$SESSION" \
+# Create tmux session and attach immediately (avoids "size missing" warning)
+# The training command and monitor pane are set up after attach via send-keys
+tmux new-session -d -s "$SESSION" -x "$(tput cols)" -y "$(tput lines)" \
     "docker compose run --rm --name qte9489-resfit-train train bash $SCRIPT; echo ''; echo 'Training finished. Press Enter to close.'; read"
 
 # Split: monitoring pane on the right (30% width)
