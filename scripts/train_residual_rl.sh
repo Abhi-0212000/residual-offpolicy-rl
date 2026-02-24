@@ -70,7 +70,7 @@ SAMPLING="uniform"                         # Sampling strategy: "uniform" or "pr
                                            # uniform = simpler, prioritized = focus on high-TD-error
 
 # ── Offline Data (demonstrations mixed into buffer) ──────────────────────────
-OFFLINE_EPISODES=100                       # How many demo episodes to load into the buffer
+OFFLINE_EPISODES=1000                       # How many demo episodes to load into the buffer
                                            # 100 = standard. 250 = more demos (more conservative)
                                            # More demos = stabler but slower to improve
 
