@@ -16,7 +16,7 @@
 #   bash scripts/resume_residual_rl.sh
 #
 #   # From host:
-#   docker compose run --rm train bash scripts/resume_residual_rl.sh
+#   docker compose run --rm --name qte9489-resfit-train train bash scripts/resume_residual_rl.sh
 #
 # Finding the values:
 #   RESUME_CKPT: ls $CACHE_DIR/run_*/models/  → pick "latest" or "policy_step_N"

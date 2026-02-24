@@ -10,7 +10,7 @@
 #   bash scripts/train_bc_act.sh
 #
 #   # From host (with docker compose):
-#   docker compose run --rm train bash scripts/train_bc_act.sh
+#   docker compose run --rm --name qte9489-resfit-train train bash scripts/train_bc_act.sh
 #
 # After training:
 #   - Best checkpoint: $CACHE_DIR/bc_run_<timestamp>/best/

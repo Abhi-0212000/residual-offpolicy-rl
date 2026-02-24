@@ -4,8 +4,8 @@
 # Usage:
 #   1. Copy .env.example → .env and fill in your keys
 #   2. docker compose build
-#   3. docker compose run --rm train bash          # interactive shell
-#   4. docker compose run --rm train python ...     # run training directly
+#   3. docker compose run --rm --name qte9489-resfit-train train bash
+#   4. docker compose run --rm --name qte9489-resfit-train train python ...
 # ============================================================================
 
 services:

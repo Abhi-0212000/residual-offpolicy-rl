@@ -14,7 +14,7 @@
 #   bash scripts/train_residual_rl.sh
 #
 #   # From host:
-#   docker compose run --rm train bash scripts/train_residual_rl.sh
+#   docker compose run --rm --name qte9489-resfit-train train bash scripts/train_residual_rl.sh
 #
 # Output:
 #   - Run directory: $CACHE_DIR/run_<timestamp>_resfit__<params>/
