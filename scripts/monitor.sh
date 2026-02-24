@@ -229,10 +229,15 @@ if $TOP_MODE; then
 fi
 
 if $LIVE; then
+    # First run: clear screen and hide cursor
+    clear
+    tput civis  # hide cursor for cleaner display
+    trap 'tput cnorm; exit' INT TERM  # restore cursor on Ctrl+C
     while true; do
-        clear
+        tput cup 0 0  # move cursor to top-left (no clear = no flicker)
         print_snapshot
         echo -e "\n${DIM}  Refreshing every ${INTERVAL}s — Ctrl+C to stop${RESET}"
+        tput ed  # clear any leftover lines below (if output shrank)
         sleep "$INTERVAL"
     done
 else
