@@ -17,15 +17,15 @@
         "eamodio.gitlens"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/opt/miniforge/envs/residual/bin/python",
-        "python.terminal.activateEnvironment": true,
+        "python.defaultInterpreterPath": "/usr/bin/python3.10",
+        "python.terminal.activateEnvironment": false,
         "terminal.integrated.defaultProfile.linux": "bash"
       }
     }
   },
 
   // Run after container is created
-  "postCreateCommand": "echo 'Container ready! Run: conda activate residual'",
+  "postCreateCommand": "echo 'Container ready! Python + all deps available globally.'",
 
   // Forward no ports by default (network_mode: host handles it)
   "forwardPorts": [],

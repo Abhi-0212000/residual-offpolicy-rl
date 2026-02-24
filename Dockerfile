@@ -3,10 +3,10 @@
 # Multi-stage Docker build for isolated, reproducible training on shared servers
 # ============================================================================
 # Base: NVIDIA CUDA 12.8 + cuDNN 9 on Ubuntu 22.04 (matches dev environment)
-# Python 3.10 via Miniforge (conda), all deps in a "residual" conda env
+# Python 3.10 from system + pip (no conda — Docker IS the isolation)
 # ============================================================================
 
-# ── Stage 1: Base system + conda ─────────────────────────────────────────────
+# ── Stage 1: Base system ─────────────────────────────────────────────────────
 FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -16,10 +16,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MUJOCO_GL=egl \
     PYOPENGL_PLATFORM=egl \
     # Disable interactive matplotlib backend
-    MPLBACKEND=Agg
+    MPLBACKEND=Agg \
+    # pip should not warn about running as root
+    PIP_ROOT_USER_ACTION=ignore
 
-# System packages needed by MuJoCo, robosuite, OpenGL, ffmpeg, git, etc.
+# System packages: Python 3.10, MuJoCo deps, OpenGL, FFmpeg, git, etc.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 python3.10-dev python3.10-venv python3-pip \
     git git-lfs curl wget ca-certificates \
     build-essential cmake pkg-config \
     libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libglfw3-dev \
@@ -29,24 +32,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg libavcodec-dev libavformat-dev libswscale-dev \
     libjpeg-dev libpng-dev \
     unzip xvfb patchelf \
-    sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Miniforge (conda + mamba) – small, fast, no Anaconda license issues
-ENV CONDA_DIR=/opt/miniforge
-RUN curl -fsSL https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
-    -o /tmp/miniforge.sh && \
-    bash /tmp/miniforge.sh -b -p $CONDA_DIR && \
-    rm /tmp/miniforge.sh
-ENV PATH="$CONDA_DIR/bin:$PATH"
-
-# Create the conda environment with Python 3.10 + ffmpeg
-RUN conda create -n residual python=3.10 -y && \
-    conda install -n residual -c conda-forge "ffmpeg>=6,<8" -y && \
-    conda clean -afy
-
-# Activate env for all subsequent RUN commands
-SHELL ["conda", "run", "-n", "residual", "/bin/bash", "-c"]
+# Make python3.10 the default python/python3, and upgrade pip
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # ── Stage 2: Python dependencies ─────────────────────────────────────────────
 FROM base AS deps
@@ -55,9 +46,6 @@ WORKDIR /app
 
 # Copy only dependency-related files first (Docker layer caching)
 COPY resfit/lerobot/lerobot_requirements.txt /app/resfit/lerobot/lerobot_requirements.txt
-COPY resfit/lerobot/setup_lerobot.sh /app/resfit/lerobot/setup_lerobot.sh
-COPY resfit/dexmg/setup_dexmg.sh /app/resfit/dexmg/setup_dexmg.sh
-COPY resfit/rl_finetuning/setup_rlpd_robosuite.sh /app/resfit/rl_finetuning/setup_rlpd_robosuite.sh
 
 # ── Install PyTorch first (biggest layer, cached unless CUDA version changes)
 RUN pip install --no-cache-dir \
@@ -128,7 +116,4 @@ COPY . /app/
 # Add project root to PYTHONPATH (needed for `import resfit`)
 ENV PYTHONPATH="/app:$PYTHONPATH"
 
-# Default entrypoint: activate conda env and run bash
-# Users override CMD for specific training commands
-ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "residual"]
 CMD ["/bin/bash"]
