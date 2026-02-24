@@ -34,6 +34,8 @@ services:
       - MUJOCO_GL=egl
       - PYOPENGL_PLATFORM=egl
       - MPLBACKEND=Agg
+      # All run_*, bc_run_*, buffer caches write here (mounted to host)
+      - CACHE_DIR=/app/data
       # Prevent OOM on 16GB GPUs
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -43,11 +45,10 @@ services:
       - hf-cache:/root/.cache/huggingface
       # Persist wandb cache
       - wandb-cache:/root/.local/share/wandb
-      # Mount a host directory for training outputs (checkpoints, logs, videos)
-      # Change the left side to your preferred host path
-      - ./docker-volumes/outputs:/app/outputs
-      - ./docker-volumes/runs:/app/runs
-      - ./docker-volumes/wandb:/app/wandb
+      # ── All training data persists on host filesystem ──
+      # CACHE_DIR is where run_*, bc_run_*, offline_buffer_cache/, online_buffer_cache/ go.
+      # Mount a single host directory so everything survives container restarts.
+      - ./data:/app/data
 
     # ── Resource limits (be nice on shared servers) ──
     shm_size: '16gb'  # needed for PyTorch DataLoader with shared memory

@@ -7,6 +7,7 @@ outputs/
 wandb/
 offline_buffer_cache/
 online_buffer_cache/
+data/
 
 # ── Dependencies (cloned repos, installed separately) ──
 deps/

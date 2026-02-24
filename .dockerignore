@@ -37,12 +37,15 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Docker
-docker-compose*.yml
+# Docker (keep compose for server rebuilds)
 Dockerfile
 .dockerignore
+
+# Persistent data (mounted as volume, not baked into image)
+data/
 docker-volumes/
 
-# Temp files
+# Temp / utility files
 temp.py
 inspect_run.py
+build.log
