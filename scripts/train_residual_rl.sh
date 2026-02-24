@@ -64,7 +64,7 @@ ACTION_SCALE=0.2                           # Max magnitude of the residual corre
 # ── Replay Buffer ────────────────────────────────────────────────────────────
 BUFFER_SIZE=80000                          # Total replay buffer capacity (transitions)
                                            # 80K fits ~16GB RAM. 200K for 48GB servers
-BATCH_SIZE=128                             # Batch size for critic/actor updates
+BATCH_SIZE=256                             # Batch size for critic/actor updates
                                            # 128 = standard. 256 if you have VRAM headroom
 SAMPLING="uniform"                         # Sampling strategy: "uniform" or "prioritized"
                                            # uniform = simpler, prioritized = focus on high-TD-error
@@ -87,7 +87,7 @@ CRITIC_WARMUP=10000                        # Train critic only (no actor) for th
                                            # 10K = lets critic stabilize before actor uses it
 
 # ── Evaluation ───────────────────────────────────────────────────────────────
-EVAL_NUM_ENVS=4                            # Parallel eval envs. 4 = safe, 8-16 on 48GB GPU
+EVAL_NUM_ENVS=10                            # Parallel eval envs. 4 = safe, 8-16 on 48GB GPU
 HEADLESS="true"                            # true = no display (server). false = show MuJoCo viewer
 
 # ── Checkpointing ────────────────────────────────────────────────────────────
