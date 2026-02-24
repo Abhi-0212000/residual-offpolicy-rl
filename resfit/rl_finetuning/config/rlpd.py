@@ -256,8 +256,10 @@ class RLPDDexmgConfig:
     # ------------------------------------------------------------------
     task: str = "Can"
     num_envs: int = 1
-    eval_num_envs: int = 8
+    eval_num_envs: int = 4
     eval_num_episodes: int = 50
+    # headless=True  → EGL offscreen rendering (fast, no display needed)
+    # headless=False → GLFW on-screen MuJoCo viewer window (slower, for visualization)
     headless: bool = True
     video_key: str = "observation.images.agentview"
     rl_camera: list[str] = field(

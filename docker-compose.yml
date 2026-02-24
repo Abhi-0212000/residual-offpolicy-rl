@@ -1,0 +1,71 @@
+# ============================================================================
+# docker-compose.yml – ResFiT training on GPU servers
+# ============================================================================
+# Usage:
+#   1. Copy .env.example → .env and fill in your keys
+#   2. docker compose build
+#   3. docker compose run --rm train bash          # interactive shell
+#   4. docker compose run --rm train python ...     # run training directly
+# ============================================================================
+
+services:
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: resfit:latest
+    container_name: resfit-train
+
+    # ── GPU access ──
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all        # or set to 1 if you want a single GPU
+              capabilities: [gpu]
+
+    # ── Environment (secrets from .env file) ──
+    env_file:
+      - .env
+
+    environment:
+      - PYTHONPATH=/app
+      - MUJOCO_GL=egl
+      - PYOPENGL_PLATFORM=egl
+      - MPLBACKEND=Agg
+      # Prevent OOM on 16GB GPUs
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+    # ── Volumes ──
+    volumes:
+      # Persist HuggingFace datasets cache between runs (avoids re-downloading 655MB)
+      - hf-cache:/root/.cache/huggingface
+      # Persist wandb cache
+      - wandb-cache:/root/.local/share/wandb
+      # Mount a host directory for training outputs (checkpoints, logs, videos)
+      # Change the left side to your preferred host path
+      - ./docker-volumes/outputs:/app/outputs
+      - ./docker-volumes/runs:/app/runs
+      - ./docker-volumes/wandb:/app/wandb
+
+    # ── Resource limits (be nice on shared servers) ──
+    shm_size: '16gb'  # needed for PyTorch DataLoader with shared memory
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+    # ── Networking ──
+    network_mode: host  # simplest for corporate VPN – uses host network directly
+
+    # Keep stdin open for interactive use
+    stdin_open: true
+    tty: true
+
+    # Default: drop into bash (override with docker compose run --rm train python ...)
+    command: ["/bin/bash"]
+
+volumes:
+  hf-cache:
+  wandb-cache:

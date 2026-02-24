@@ -1,8 +1,45 @@
+# ── Run artifacts & caches (large, machine-specific) ──
+run_*/
+run_2026-*/
+bc_run_*/
 artifacts/
 outputs/
-__pycache__
 wandb/
 offline_buffer_cache/
 online_buffer_cache/
-bc_run_*
+
+# ── Dependencies (cloned repos, installed separately) ──
 deps/
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.so
+
+# ── Environment / secrets ──
+.env
+.env.local
+*.key
+*.pem
+
+# ── IDE ──
+.vscode/settings.json
+.idea/
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ── Jupyter ──
+.ipynb_checkpoints/
+
+# ── Docker volumes (if mounted locally) ──
+docker-volumes/

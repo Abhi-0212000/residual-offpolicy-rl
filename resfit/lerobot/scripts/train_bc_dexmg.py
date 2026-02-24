@@ -170,6 +170,16 @@ parser.add_argument(
     action="store_true",
     help="Enable debug mode (uses synchronous vec envs instead of async multiprocessing for debugging).",
 )
+parser.add_argument(
+    "--no_cleanup",
+    action="store_true",
+    help=(
+        "Skip cleanup of the run cache directory after training finishes. "
+        "When set, local checkpoints (policy_step_*, latest/, best/) are "
+        "preserved on disk under CACHE_DIR. Useful when network issues may "
+        "prevent W&B artifact uploads from completing."
+    ),
+)
 
 # -------------------------------------------------
 # Policy configuration overrides
@@ -894,8 +904,14 @@ def main(cfg: argparse.Namespace):
     # ---------------------------------------------------------------------
     # Cleanup --------------------------------------------------------------
     # ---------------------------------------------------------------------
-    # Clean up entire run directory after successful completion (videos/logs are saved to wandb)
-    if run_cache_dir.exists():
+    if cfg.no_cleanup:
+        logger.info(
+            colored(
+                f"Skipping cleanup (--no_cleanup). Checkpoints preserved at: {run_cache_dir}",
+                "yellow",
+            )
+        )
+    elif run_cache_dir.exists():
         logger.info(f"Cleaning up run directory: {run_cache_dir}")
         shutil.rmtree(run_cache_dir)
         logger.info("Run directory cleaned up successfully.")

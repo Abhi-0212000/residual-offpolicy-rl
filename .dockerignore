@@ -1,0 +1,48 @@
+# .dockerignore – keep the Docker context small & fast
+# Matches .gitignore patterns + Docker-specific exclusions
+
+# Run artifacts (huge, not needed in image)
+run_*/
+run_2026-*/
+bc_run_*/
+artifacts/
+outputs/
+wandb/
+offline_buffer_cache/
+online_buffer_cache/
+
+# Dependencies are cloned fresh in Docker build
+deps/
+
+# Git history (not needed in image)
+.git/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Environment / secrets
+.env
+.env.local
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose*.yml
+Dockerfile
+.dockerignore
+docker-volumes/
+
+# Temp files
+temp.py
+inspect_run.py

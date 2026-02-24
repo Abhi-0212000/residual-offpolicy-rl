@@ -90,6 +90,7 @@ class RobosuiteGymWrapper:
         camera_size: int = 84,
         render_size: tuple[int, int] | int | None = None,
         env_id: int = 0,
+        headless: bool = True,
     ):
         # ------------------------------------------------------------------
         # Allow common aliases used in the Robomimic literature.
@@ -178,11 +179,12 @@ class RobosuiteGymWrapper:
         self.expected_image_keys = expected_image_keys  # Store for use in _process_obs
 
         # Create environment using robosuite.make()
+        self.headless = headless
         env_kwargs = {
             "env_name": env_name,
             "robots": robots,
             "controller_configs": load_composite_controller_config(robot=robots[0]),
-            "has_renderer": False,
+            "has_renderer": not headless,
             "has_offscreen_renderer": True,
             "ignore_done": False,
             "use_camera_obs": True,
@@ -306,6 +308,7 @@ class RobosuiteGymWrapper:
 
         obs, reward, done, info = self.env.step(action)
         self.episode_steps += 1
+
         # Convert to the expected format
         processed_obs = self._process_obs(obs)
 
@@ -478,7 +481,11 @@ class RobosuiteGymWrapper:
         return panda_low_dim_keys_multi
 
     def render(self):
-        """Return an RGB frame (H, W, 3, uint8) for video recording."""
+        """Return an RGB frame (H, W, 3, uint8) for video recording.
+
+        This is called during evaluation to capture frames for video logging.
+        It does NOT update the on-screen MuJoCo viewer — use render_viewer() for that.
+        """
 
         # Prefer the configured video_key's camera when available
         camera_name = "agentview"
@@ -497,6 +504,18 @@ class RobosuiteGymWrapper:
         )[::-1]
 
         return frame  # noqa: RET504
+
+    def render_viewer(self):
+        """Update the on-screen MuJoCo viewer window (headless=False only).
+
+        Call this after step() in the main training loop when you want to
+        visualize the robot in real time.  Does nothing when headless=True.
+        This is intentionally kept separate from render() (which captures
+        offscreen frames for video recording) to avoid accidentally slowing
+        down training.
+        """
+        if not self.headless:
+            self.env.render()
 
     def set_video_key(self, video_key: str):
         """Set which observation key to use for video recording."""
@@ -543,6 +562,7 @@ def make_dexmimicgen_env(
     render_size: tuple[int, int] | int | None = None,
     render_gpu_device_id: int = 0,
     env_id: int = 0,
+    headless: bool = True,
 ):
     """Factory function to create a DexMimicGen environment for vectorization."""
 
@@ -554,6 +574,7 @@ def make_dexmimicgen_env(
             camera_size=camera_size,
             render_size=render_size,
             env_id=env_id,
+            headless=headless,
         )
 
     return _make
@@ -595,6 +616,20 @@ class VectorizedEnvWrapper:
             raise RuntimeError("No frames returned from vectorized environment")
         return frames
 
+    def render_viewer(self):
+        """Update on-screen MuJoCo viewers for all sub-environments.
+
+        Only works with SyncVectorEnv (headless=False).  For AsyncVectorEnv
+        (headless=True) this is a no-op since the sub-environments live in
+        separate processes without display access.
+        """
+        # SyncVectorEnv exposes .envs (list of sub-envs)
+        sub_envs = getattr(self.vec_env, "envs", None)
+        if sub_envs is not None:
+            for sub_env in sub_envs:
+                if hasattr(sub_env, "render_viewer"):
+                    sub_env.render_viewer()
+
     @property
     def fps(self):
         return self.vec_env.metadata["render_fps"]
@@ -629,6 +664,7 @@ def create_vectorized_env(
     render_size: tuple[int, int] | int | None = None,
     debug: bool = False,
     video_key: str = "observation.images.agentview",
+    headless: bool = True,
 ) -> VectorizedEnvWrapper:
     """Create vectorized environment using Gymnasium's vector environments."""
 
@@ -652,11 +688,12 @@ def create_vectorized_env(
             render_gpu_device_id = visible_device_ids[env_id % num_visible_gpus]
         else:
             render_gpu_device_id = visible_device_ids[0] if visible_device_ids else 0
-        env_fns.append(make_dexmimicgen_env(env_name, camera_size, render_size, render_gpu_device_id, env_id))
+        env_fns.append(make_dexmimicgen_env(env_name, camera_size, render_size, render_gpu_device_id, env_id, headless=headless))
 
-    if debug:
-        # Use synchronous vectorized environment for debugging
-        logger.debug("Debug mode: using gymnasium.vector.SyncVectorEnv")
+    if debug or not headless:
+        # Use synchronous vectorized environment for debugging or on-screen rendering
+        # (on-screen MuJoCo viewer windows must live in the main process)
+        logger.debug("Using gymnasium.vector.SyncVectorEnv (debug=%s, headless=%s)", debug, headless)
         vec_env = gym.vector.SyncVectorEnv(
             env_fns,
             autoreset_mode=gym.vector.AutoresetMode.SAME_STEP,

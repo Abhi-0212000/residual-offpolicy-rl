@@ -129,3 +129,61 @@ def save_checkpoint(
 
     torch.save(checkpoint_data, checkpoint_path)
     print(f"💾 Saved checkpoint to: {checkpoint_path}")
+
+
+def load_checkpoint(
+    checkpoint_path: str | Path,
+    agent: QAgent,
+    device: torch.device | str = "cpu",
+) -> dict:
+    """Load a QAgent checkpoint and restore agent + optimizer states.
+
+    Args:
+        checkpoint_path: Path to the checkpoint .pt file.
+        agent: The QAgent whose weights and optimizers will be restored.
+        device: Device to map tensors onto.
+
+    Returns:
+        A dict with auxiliary info from the checkpoint:
+        ``{"global_step": int, "success_rate": float | None, "config": ... }``
+    """
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    print(f"Loading checkpoint from: {checkpoint_path}")
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+    # Restore agent weights
+    agent.load_state_dict(ckpt["agent_state_dict"])
+
+    # Restore optimizer states
+    opt_states = ckpt.get("optimizer_state_dict", {})
+    if "actor_opt" in opt_states:
+        agent.actor_opt.load_state_dict(opt_states["actor_opt"])
+    if "critic_opt" in opt_states:
+        agent.critic_opt.load_state_dict(opt_states["critic_opt"])
+    if "encoder_opt" in opt_states:
+        agent.encoder_opt.load_state_dict(opt_states["encoder_opt"])
+
+    # Restore scheduler states (if any)
+    sched_states = ckpt.get("scheduler_state_dict", {})
+    if "actor_scheduler" in sched_states and hasattr(agent, "actor_scheduler") and agent.actor_scheduler is not None:
+        agent.actor_scheduler.load_state_dict(sched_states["actor_scheduler"])
+    if "critic_scheduler" in sched_states and hasattr(agent, "critic_scheduler") and agent.critic_scheduler is not None:
+        agent.critic_scheduler.load_state_dict(sched_states["critic_scheduler"])
+    if "encoder_scheduler" in sched_states and hasattr(agent, "encoder_scheduler") and agent.encoder_scheduler is not None:
+        agent.encoder_scheduler.load_state_dict(sched_states["encoder_scheduler"])
+
+    global_step = ckpt.get("global_step", 0)
+    success_rate = ckpt.get("success_rate")
+    config = ckpt.get("config")
+
+    print(f"✅ Restored checkpoint: global_step={global_step}, success_rate={success_rate}")
+
+    return {
+        "global_step": global_step,
+        "success_rate": success_rate,
+        "config": config,
+        "actor_updates": ckpt.get("actor_updates", 0),
+    }

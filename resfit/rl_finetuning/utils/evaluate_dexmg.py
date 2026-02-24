@@ -7,6 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import imageio
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive backend — prevents Tkinter/Tcl thread conflicts with AsyncVectorEnv
 import matplotlib.pyplot as plt
 import numpy as np
 import torch

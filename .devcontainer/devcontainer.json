@@ -1,0 +1,35 @@
+// .devcontainer/devcontainer.json
+// VS Code Dev Container – use "Reopen in Container" for a full dev environment
+{
+  "name": "ResFiT Dev",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "train",
+  "workspaceFolder": "/app",
+
+  // Extensions to install in the container
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/miniforge/envs/residual/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  // Run after container is created
+  "postCreateCommand": "echo 'Container ready! Run: conda activate residual'",
+
+  // Forward no ports by default (network_mode: host handles it)
+  "forwardPorts": [],
+
+  // Run as root inside container (simplifies GPU access)
+  "remoteUser": "root"
+}

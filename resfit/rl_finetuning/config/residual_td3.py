@@ -120,9 +120,25 @@ class ResidualTD3DexmgConfig(RLPDDexmgConfig):
     # ------------------------------------------------------------------
     eval_interval_every_steps: int = 10_000
 
+    # How often (in env steps) to save a checkpoint and push to WandB.
+    # Set to -1 to disable periodic checkpointing (best-model saving still works).
+    save_freq: int = 10_000
+
     # Whether to run an evaluation pass before training begins (at step 0)
     eval_first: bool = True
 
+    # When True, skip cleanup of the run_cache_dir after training finishes.
+    # Local checkpoints (latest/, best/, policy_step_*/) are preserved on disk.
+    # Useful when network issues may prevent WandB artifact uploads from completing.
+    no_cleanup: bool = False
+
+    # ------------------------------------------------------------------
+    # Resume from checkpoint
+    # ------------------------------------------------------------------
+    # Path to a local checkpoint file (checkpoint.pt) or directory containing
+    # one.  When set, agent weights, optimizers, and global_step are restored
+    # so training continues from where it left off.
+    resume_ckpt: str | None = None
 
 @dataclass
 class ResidualTD3CanConfig(ResidualTD3DexmgConfig):

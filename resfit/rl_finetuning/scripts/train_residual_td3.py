@@ -56,10 +56,11 @@ from resfit.rl_finetuning.utils.hugging_face import (
     optimized_replay_buffer_dumps,
     optimized_replay_buffer_loads,
 )
+from resfit.rl_finetuning.utils.checkpoint import load_checkpoint, save_checkpoint
 from resfit.rl_finetuning.utils.normalization import ActionScaler, StateStandardizer
 from resfit.rl_finetuning.utils.rb_transforms import MultiStepTransform
 from resfit.rl_finetuning.wrappers.residual_env_wrapper import BasePolicyVecEnvWrapper
-
+from termcolor import colored
 
 # -----------------------------------------------------------------------------
 # Timing utility --------------------------------------------------------------
@@ -138,7 +139,11 @@ ONLINE_CACHE_DIR = _CACHE_ROOT / "online_buffer_cache"
 # -----------------------------------------------------------------------------
 # Repository-local imports ------------------------------------------------------
 # -----------------------------------------------------------------------------
-os.environ["MUJOCO_GL"] = "egl"
+# MUJOCO_GL is set later in main() based on cfg.headless:
+#   headless=True  -> "egl"  (offscreen GPU rendering, no display needed)
+#   headless=False -> "glfw" (on-screen viewer windows)
+# Default to "egl" here; main() overrides when headless=False.
+os.environ.setdefault("MUJOCO_GL", "egl")
 
 if "MUJOCO_EGL_DEVICE_ID" in os.environ:
     del os.environ["MUJOCO_EGL_DEVICE_ID"]
@@ -205,6 +210,17 @@ def _add_transitions_to_buffer(
 def main(cfg: ResidualTD3DexmgConfig):
     device_str = "cuda" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_str)
+
+    # ------------------------------------------------------------------
+    # Select MuJoCo rendering backend before any environment is created.
+    #   headless=True  (default) -> EGL (off-screen GPU rendering)
+    #   headless=False           -> GLFW (on-screen MuJoCo viewer window)
+    # ------------------------------------------------------------------
+    if not cfg.headless:
+        os.environ["MUJOCO_GL"] = "glfw"
+        logger.info("On-screen rendering enabled (MUJOCO_GL=glfw). A viewer window will open.")
+    else:
+        os.environ["MUJOCO_GL"] = "egl"
 
     # Enable performance optimizations
     if device.type == "cuda":
@@ -277,6 +293,7 @@ def main(cfg: ResidualTD3DexmgConfig):
             device=device,
             video_key=video_key,
             debug=debug,
+            headless=cfg.headless,
         )
 
         # Wrap it with the base policy wrapper
@@ -859,6 +876,28 @@ def main(cfg: ResidualTD3DexmgConfig):
     training_cum_time = 0.0
     episode_count = 0
 
+    # ------------------------------------------------------------------
+    # Resume from checkpoint (if requested) --------------------------------
+    # ------------------------------------------------------------------
+    if getattr(cfg, "resume_ckpt", None) is not None:
+        resume_path = Path(cfg.resume_ckpt)
+        # Accept either a direct .pt file or a directory containing checkpoint.pt
+        if resume_path.is_dir():
+            resume_path = resume_path / "checkpoint.pt"
+        ckpt_info = load_checkpoint(resume_path, agent, device=device)
+        global_step = ckpt_info["global_step"]
+        best_eval_success_rate = ckpt_info.get("success_rate") or 0.0
+        # Restore actor_updates counter (for LR warmup bookkeeping)
+        actor_updates = ckpt_info.get("actor_updates", 0)
+        print(
+            colored(
+                f"Resumed from checkpoint: global_step={global_step}, "
+                f"best_success_rate={best_eval_success_rate:.4f}, "
+                f"actor_updates={actor_updates}",
+                "cyan",
+            )
+        )
+
     train_start_time = time.time()
 
     # Initialize timing utility
@@ -922,7 +961,8 @@ def main(cfg: ResidualTD3DexmgConfig):
     # ------------------------------------------------------------------
     # Critic warmup phase ----------------------------------------------
     # ------------------------------------------------------------------
-    if cfg.algo.critic_warmup_steps > 0:
+    _is_resuming = getattr(cfg, "resume_ckpt", None) is not None and global_step > 0
+    if cfg.algo.critic_warmup_steps > 0 and not _is_resuming:
         print(f"Critic warmup: running {cfg.algo.critic_warmup_steps} critic-only updates...")
         _run_critic_warmup(
             agent=agent,
@@ -935,6 +975,8 @@ def main(cfg: ResidualTD3DexmgConfig):
             offline_batch_size=offline_batch_size,
         )
         print("Critic warmup completed.")
+    elif _is_resuming:
+        print(f"Skipping critic warmup (resuming from step {global_step}).")
 
     while global_step <= cfg.algo.total_timesteps:
         iter_start = time.time()
@@ -952,6 +994,10 @@ def main(cfg: ResidualTD3DexmgConfig):
 
             next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated | truncated
+
+        # Update on-screen MuJoCo viewer (no-op when headless=True)
+        env.render_viewer()
+
         if done.any():
             episode_count += done.float().sum().item()
             # Extract episode information from final_info
@@ -1015,7 +1061,94 @@ def main(cfg: ResidualTD3DexmgConfig):
                     print(f"🎉 New best success rate: {current_success_rate:.4f} (prev: {best_eval_success_rate:.4f})")
                     best_eval_success_rate = current_success_rate
 
+                    # Save best checkpoint locally
+                    best_dir = model_save_dir / "best"
+                    if best_dir.exists():
+                        shutil.rmtree(best_dir)
+                    best_dir.mkdir(parents=True, exist_ok=True)
+                    save_checkpoint(
+                        agent=agent,
+                        checkpoint_path=best_dir / "checkpoint.pt",
+                        global_step=global_step,
+                        config=cfg,
+                        success_rate=current_success_rate,
+                        actor_updates=actor_updates,
+                    )
+                    print(
+                        colored(
+                            f"Best checkpoint saved @ {best_dir} (success_rate={current_success_rate:.4f})",
+                            "magenta",
+                        )
+                    )
+
+                    # Push best artifact to WandB
+                    if wandb.run is not None:
+                        art_best = wandb.Artifact(
+                            name=f"run_{wandb.run.id}_best", type="model"
+                        )
+                        art_best.add_dir(str(best_dir))
+                        wandb.log_artifact(art_best, aliases=["best"])
+
         global_step += cfg.num_envs
+
+        # ------------------------------------------------------------------
+        # (3b) Periodic checkpoint saving ----------------------------------
+        # ------------------------------------------------------------------
+        if (
+            cfg.save_freq > 0
+            and global_step % cfg.save_freq == 0
+            and global_step > 0
+        ):
+            # 1) Save a timestamped checkpoint for history
+            step_dir = model_save_dir / f"policy_step_{global_step}"
+            step_dir.mkdir(parents=True, exist_ok=True)
+            save_checkpoint(
+                agent=agent,
+                checkpoint_path=step_dir / "checkpoint.pt",
+                global_step=global_step,
+                config=cfg,
+                success_rate=best_eval_success_rate,
+                actor_updates=actor_updates,
+            )
+
+            # 2) Overwrite the "latest" directory (for resume)
+            latest_dir = model_save_dir / "latest"
+            if latest_dir.exists():
+                shutil.rmtree(latest_dir)
+            latest_dir.mkdir(parents=True, exist_ok=True)
+            save_checkpoint(
+                agent=agent,
+                checkpoint_path=latest_dir / "checkpoint.pt",
+                global_step=global_step,
+                config=cfg,
+                success_rate=best_eval_success_rate,
+                actor_updates=actor_updates,
+            )
+
+            print(
+                colored(
+                    f"Checkpoint saved (step={global_step}, "
+                    f"history @ {step_dir}, latest @ {latest_dir})",
+                    "magenta",
+                )
+            )
+
+            # 3) Push artifacts to WandB
+            if wandb.run is not None:
+                # Timestamped artifact (keeps history)
+                art_step = wandb.Artifact(
+                    name=f"run_{wandb.run.id}_model_step_{global_step}",
+                    type="model",
+                )
+                art_step.add_dir(str(step_dir))
+                wandb.log_artifact(art_step)
+
+                # "latest" artifact (overwritten each time, for easy resume)
+                art_latest = wandb.Artifact(
+                    name=f"run_{wandb.run.id}_latest", type="model"
+                )
+                art_latest.add_dir(str(latest_dir))
+                wandb.log_artifact(art_latest, aliases=["latest"])
 
         # ------------------------------------------------------------------
         # (4) Updates -------------------------------------------------------
@@ -1179,8 +1312,41 @@ def main(cfg: ResidualTD3DexmgConfig):
 
     print(f"Training finished in {time.time() - train_start_time:.2f} seconds.")
 
+    # Final checkpoint at end of training
+    if cfg.save_freq > 0:
+        final_dir = model_save_dir / "final"
+        if final_dir.exists():
+            shutil.rmtree(final_dir)
+        final_dir.mkdir(parents=True, exist_ok=True)
+        save_checkpoint(
+            agent=agent,
+            checkpoint_path=final_dir / "checkpoint.pt",
+            global_step=global_step,
+            config=cfg,
+            success_rate=best_eval_success_rate,
+            actor_updates=actor_updates,
+        )
+        print(colored(f"Final checkpoint saved @ {final_dir}", "magenta"))
+
+        if wandb.run is not None:
+            art_final = wandb.Artifact(
+                name=f"run_{wandb.run.id}_final", type="model"
+            )
+            art_final.add_dir(str(final_dir))
+            wandb.log_artifact(art_final, aliases=["final", "latest"])
+
+    if wandb.run is not None:
+        wandb.finish()
+
     # Clean up entire run directory after successful completion (videos/logs are saved to wandb)
-    if run_cache_dir.exists():
+    if cfg.no_cleanup:
+        logger.info(
+            colored(
+                f"Skipping cleanup (no_cleanup=True). Checkpoints preserved at: {run_cache_dir}",
+                "yellow",
+            )
+        )
+    elif run_cache_dir.exists():
         print(f"Cleaning up run directory: {run_cache_dir}")
         shutil.rmtree(run_cache_dir)
         print("Run directory cleaned up successfully.")

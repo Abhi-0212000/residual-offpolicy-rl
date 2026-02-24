@@ -192,8 +192,13 @@ class BasePolicyVecEnvWrapper:
         return info
 
     def render(self):
-        """Pass through to underlying environment."""
+        """Pass through to underlying environment (offscreen frames for video)."""
         return self.vec_env.render()
+
+    def render_viewer(self):
+        """Update on-screen MuJoCo viewer (headless=False only). No-op otherwise."""
+        if hasattr(self.vec_env, "render_viewer"):
+            self.vec_env.render_viewer()
 
     def close(self):
         """Close the environment."""
