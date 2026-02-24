@@ -96,7 +96,8 @@ RUN pip install --no-cache-dir \
     hydra-core omegaconf \
     huggingface-hub safetensors \
     h5py scipy matplotlib pillow \
-    "numba>=0.60" "llvmlite>=0.44"
+    "numba>=0.60" "llvmlite>=0.44" \
+    py-spy
 
 # Verify critical imports
 RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}')" && \

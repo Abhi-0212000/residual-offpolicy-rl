@@ -25,6 +25,16 @@ services:
               count: all        # or set to 1 if you want a single GPU
               capabilities: [gpu]
 
+    # Allow py-spy to attach to Python processes for profiling
+    cap_add:
+      - SYS_PTRACE
+
+    # PyTorch shares CUDA tensors between async env workers via pidfd_getfd,
+    # which Docker's default seccomp profile blocks → "Operation not permitted"
+    security_opt:
+      - seccomp:unconfined
+    ipc: host   # shared memory for PyTorch multiprocessing
+
     # ── Environment (secrets from .env file) ──
     env_file:
       - .env
