@@ -45,9 +45,18 @@ services:
       - hf-cache:/root/.cache/huggingface
       # Persist wandb cache
       - wandb-cache:/root/.local/share/wandb
+      # ── Live code mount ──
+      # Mounts the host repo over /app so git pull instantly reflects in container.
+      # No rebuild needed for code changes!
+      - .:/app
+      # ── Preserve deps from image (would be hidden by the .:/app mount) ──
+      # These named volumes are initialized from the image on first run.
+      - deps-lerobot:/app/deps/lerobot
+      - deps-robosuite:/app/deps/robosuite
+      - deps-dexmimicgen:/app/deps/dexmimicgen
+      - deps-mimicgen:/app/deps/mimicgen
       # ── All training data persists on host filesystem ──
       # CACHE_DIR is where run_*, bc_run_*, offline_buffer_cache/, online_buffer_cache/ go.
-      # Mount a single host directory so everything survives container restarts.
       - ./data:/app/data
 
     # ── Resource limits (be nice on shared servers) ──
@@ -70,3 +79,7 @@ services:
 volumes:
   hf-cache:
   wandb-cache:
+  deps-lerobot:
+  deps-robosuite:
+  deps-dexmimicgen:
+  deps-mimicgen:
