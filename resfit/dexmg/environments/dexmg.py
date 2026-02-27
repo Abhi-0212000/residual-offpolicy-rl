@@ -598,6 +598,13 @@ class VectorizedEnvWrapper:
         return obs, info
 
     def step(self, actions):
+        # Convert torch tensors to numpy for gymnasium vectorized envs.
+        # AsyncVectorEnv serialises actions through a pipe to worker sub-processes;
+        # sending CUDA tensors causes workers to call torch.cuda._lazy_init() which
+        # fails because spawned workers have no GPU access.
+        if isinstance(actions, torch.Tensor):
+            actions = actions.detach().cpu().numpy()
+
         obs, rewards, terminated, truncated, info = self.vec_env.step(actions)
         self._last_obs = obs
 

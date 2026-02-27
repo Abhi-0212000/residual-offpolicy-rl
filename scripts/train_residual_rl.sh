@@ -96,7 +96,7 @@ SAVE_FREQ=10000                            # Save checkpoint every N env steps
 NO_CLEANUP="true"                          # Keep all checkpoints (true) or auto-delete old ones (false)
 
 # ── WandB ────────────────────────────────────────────────────────────────────
-WANDB_PROJECT="dexmg-coffee"               # WandB project for RL runs
+WANDB_PROJECT="dexmg-coffee-ibrl"               # WandB project for RL runs
 WANDB_NAME="resfit"                        # Run name prefix in WandB
 WANDB_GROUP="resfit"                       # Group name for organizing related runs
 
