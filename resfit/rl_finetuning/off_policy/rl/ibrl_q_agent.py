@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 from contextlib import contextmanager
+from typing import Optional
 
 import torch
 from torch import nn
@@ -18,7 +19,34 @@ from resfit.rl_finetuning.off_policy.rl.actor import Actor
 from resfit.rl_finetuning.off_policy.rl.critic import Critic
 
 
-class QAgent(nn.Module):
+class QAgent_ibrl(nn.Module):
+    """IBRL (Interleaving Behavioural cloning and Reinforcement Learning) variant of QAgent.
+
+    ┌─────────────────────────────────────────────────────────────────────────────┐
+    │  KEY DIFFERENCE FROM ORIGINAL QAgent:                                      │
+    │                                                                           │
+    │  Original QAgent (residual mode):                                         │
+    │    action = clamp(base_action + residual, -1, 1)                          │
+    │    Always adds the RL residual to the base BC action.                     │
+    │                                                                           │
+    │  IBRL QAgent:                                                             │
+    │    At each step, compare Q-values of two candidate actions:               │
+    │      candidate_0 = clamp(base_action + residual, -1, 1)  (RL-augmented)  │
+    │      candidate_1 = base_action                            (pure BC)       │
+    │    Pick whichever has higher Q-value ("Q-gated switch").                  │
+    │                                                                           │
+    │  Intuition: If the critic thinks the RL residual helps → use it.          │
+    │             If the critic thinks pure BC is better → ignore RL residual.  │
+    │             This is conservative: it can never do worse than BC            │
+    │             (assuming a well-trained critic), but in practice the critic   │
+    │             is noisy and can make wrong decisions.                         │
+    │                                                                           │
+    │  The method is inspired by the IBRL paper:                                │
+    │    "Interleaving Computational and Learned Elements for RL"               │
+    │    (Zhang et al., 2024)                                                   │
+    └─────────────────────────────────────────────────────────────────────────────┘
+    """
+
     def __init__(
         self,
         obs_shape: tuple[int, int, int],
@@ -28,7 +56,7 @@ class QAgent(nn.Module):
         cfg: QAgentConfig,
         residual_actor: bool = False,
     ):
-        """Initialize the Q-agent.
+        """Initialize the IBRL Q-agent.
 
         Parameters
         ----------
@@ -249,7 +277,18 @@ class QAgent(nn.Module):
         return should_unsqueeze
 
     def act(self, obs: dict[str, torch.Tensor], *, eval_mode=False, stddev=0.0, cpu=True) -> torch.Tensor:
-        """This function takes tensor and returns actions in tensor"""
+        """Select an action using IBRL Q-gated switching.
+
+        Instead of the original QAgent which always returns the raw residual,
+        this method uses _act_ibrl() which:
+          1. Computes the RL residual from the actor network
+          2. Forms two candidates: (base + residual) vs (base alone)
+          3. Uses the critic's Q-values to pick the better one
+          4. Returns the *selected residual* (either the RL residual or zero)
+
+        The environment wrapper will then add this returned residual to the
+        base_action, so returning zero effectively means "just use BC".
+        """
         assert not self.training
         assert not self.actor.training
         # Make a shallow copy of the observation dict
@@ -259,11 +298,12 @@ class QAgent(nn.Module):
         assert "feat" not in obs
         obs["feat"] = self._encode(obs, augment=False)
 
-        action = self._act_default(
+        action = self._act_ibrl(
             obs=obs,
             eval_mode=eval_mode,
             stddev=stddev,
             clip=None,
+            eps_greedy=1.0,  # Always greedy Q-gated switching (no epsilon exploration at act time)
             use_target=False,
         )
 
@@ -299,6 +339,117 @@ class QAgent(nn.Module):
 
         return action
 
+    def _act_ibrl(
+        self,
+        *,
+        obs: dict[str, torch.Tensor],
+        eval_mode: bool,
+        stddev: float,
+        clip: Optional[float],
+        eps_greedy: float,
+        use_target: bool,
+    ) -> torch.Tensor:
+        """IBRL Q-gated action selection.
+
+        This is the core IBRL logic. Instead of blindly adding the RL residual
+        to the BC base action (as in the original QAgent), this method uses
+        the critic to decide whether the RL residual actually helps.
+
+        Algorithm:
+        ─────────
+        1. Compute RL residual:  r = actor(obs)
+        2. Form two candidate *full* actions:
+             candidate_0 = clamp(base_action + r, -1, 1)   ← "RL-augmented"
+             candidate_1 = base_action                      ← "pure BC"
+        3. Evaluate both candidates with the target critic:
+             Q_0 = Q_target(obs, candidate_0)
+             Q_1 = Q_target(obs, candidate_1)
+        4. Greedy selection:
+             if Q_0 > Q_1  →  return r         (use the RL residual)
+             else           →  return 0         (ignore RL, use pure BC)
+
+        The returned value is a *residual* (not a full action). The environment
+        wrapper then computes: executed_action = clamp(base_action + returned, -1, 1).
+        So returning 0 means "just use base_action as-is".
+
+        Difference from original QAgent._act_default:
+        ─────────────────────────────────────────────
+        Original: Always returns the RL residual unconditionally.
+        IBRL:     Returns the RL residual ONLY if critic says it's better than BC.
+
+        Epsilon-greedy (optional, during training):
+        ─────────────────────────────────────────────
+        With probability (1 - eps_greedy), pick a random candidate instead of
+        the greedy one. This adds exploration diversity during online collection.
+
+        Parameters
+        ----------
+        obs : observation dict (must include 'feat', 'observation.state', 'observation.base_action')
+        eval_mode : if True, use deterministic actor (dist.mean); else sample
+        stddev : exploration noise std for the actor's truncated normal
+        clip : clip range for sampling from truncated normal
+        eps_greedy : probability of using the greedy (Q-gated) action.
+                     1.0 = always greedy (no random exploration). <1.0 = epsilon-greedy.
+        use_target : if True, use target actor/critic networks
+
+        Returns
+        -------
+        selected_residual : [B, action_dim] — either the RL residual or zeros.
+        """
+        actor = self.actor_target if use_target else self.actor
+        if eval_mode:
+            assert not actor.training
+
+        # ── Step 1: Get the RL residual from the actor network ──
+        rl_dist: utils.TruncatedNormal = actor(obs, stddev)
+        if eval_mode:
+            residual = rl_dist.mean
+        else:
+            residual = rl_dist.sample(clip)
+
+        # ── Step 2: Form two candidate full actions ──
+        base_action = obs["observation.base_action"]
+        full_rl_action = torch.clamp(base_action + residual, -1.0, 1.0)  # candidate 0: RL-augmented
+        bc_action = base_action  # candidate 1: pure BC
+
+        # Stack full actions for batched Q evaluation: [B, 2, action_dim]
+        rl_bc_actions = torch.stack([full_rl_action, bc_action], dim=1)
+        bsize, num_action, action_dim = rl_bc_actions.size()
+
+        # ── Step 3: Evaluate Q-values for both candidates ──
+        # Flatten batch and candidate dims for a single critic forward pass
+        flat_actions = rl_bc_actions.flatten(0, 1)  # [B*2, action_dim]
+        if isinstance(self.critic_target, Critic):
+            # Repeat obs features for each candidate: [B, ...] → [B*2, ...]
+            flat_qfeats = obs["feat"].unsqueeze(1).repeat(1, num_action, 1, 1).flatten(0, 1)
+            flat_props = obs["observation.state"].unsqueeze(1).repeat(1, num_action, 1).flatten(0, 1)
+            qa: torch.Tensor = self.critic_target.q_value(flat_qfeats, flat_props, flat_actions)
+
+        # ── Step 4: Pick the candidate with higher Q-value ──
+        # qa shape: [B*2, 1] → reshape to [B, 2] and take argmax
+        greedy_action_idx: torch.Tensor = qa.view(bsize, num_action).argmax(1)  # [B]
+        # idx=0 means "RL-augmented is better" → return residual
+        # idx=1 means "pure BC is better"      → return zeros
+
+        zero_residual = torch.zeros_like(residual)
+        selected_residual = torch.where(
+            greedy_action_idx.unsqueeze(1) == 0,
+            residual,
+            zero_residual
+        )
+
+        # ── Optional: epsilon-greedy exploration ──
+        if not eval_mode and eps_greedy < 1.0:
+            eps = torch.rand((bsize, 1), device=qa.device)
+            use_greedy = (eps < eps_greedy).float()
+            rand_action_idx = torch.randint(0, num_action, (bsize,), device=qa.device)
+            rand_is_residual = (rand_action_idx == 0).unsqueeze(1)
+
+            rand_selected_residual = torch.where(rand_is_residual, residual, zero_residual)
+            selected_residual = rand_selected_residual * (1 - use_greedy) + selected_residual * use_greedy
+
+        return selected_residual
+
     def update_critic(
         self,
         obs: dict[str, torch.Tensor],
@@ -315,22 +466,29 @@ class QAgent(nn.Module):
 
             # Predict next residual action and form the combined next action
             # Use target_action_noise config to control whether to add noise to target actions
-            next_residual_action = self._act_default(
+            # ── IBRL Q-gated target action selection ──
+            # In the original QAgent, next_action is always base + residual.
+            # Here, we use IBRL Q-gating: the target critic picks whether to
+            # apply the residual or use pure BC for the *next* state as well.
+            # This makes the Bellman target consistent with the IBRL policy.
+            next_residual_action = self._act_ibrl(
                 obs=next_obs,
-                eval_mode=not self.cfg.target_action_noise,  # Disable noise if target_action_noise=False
+                eval_mode=not self.cfg.target_action_noise,
                 stddev=stddev,
                 clip=self.cfg.stddev_clip,
+                eps_greedy=1.0,  # Always greedy for target computation
                 use_target=True,
             )
 
             if self.residual_actor:
-                # Current step: 'action' from the replay buffer is the executed combined action
-                # Next step: combine and clamp to match environment execution
+                # The returned next_residual_action is already Q-gated:
+                # it's either the RL residual (if critic preferred it) or zero (if BC was better).
+                # We add it to base and clamp to form the next_action for Bellman target.
                 next_action = torch.clamp(next_obs["observation.base_action"] + next_residual_action, -1.0, 1.0)
             else:
                 next_action = next_residual_action
 
-            # Compute target Q using min over a random subset of 2 heads
+            # Compute target Q using min over random subset of heads
             target_all = self.critic_target.q_value(next_obs["feat"], next_obs["observation.state"], next_action)
             target_q_min = target_all.squeeze(-1)  # [B]
             target_q = (reward + (discount * target_q_min)).detach()
@@ -373,7 +531,7 @@ class QAgent(nn.Module):
             K = logits_per_head.shape[0]
             losses = [self.critic.c51_loss(logits_per_head[i], target_distribution) for i in range(K)]
             critic_loss = torch.stack(losses).mean()
-        else:
+        else: # We use this loss because mse is chosen inside the rlpd config. 
             q_all = self.critic(obs["feat"], obs["observation.state"], action).squeeze(-1)  # [K,B]
             # Compute TD errors for prioritized experience replay (before taking mean)
             td_errors = torch.abs(q_all - target_q.unsqueeze(0)).mean(dim=0)  # [B] - mean across heads
@@ -422,6 +580,13 @@ class QAgent(nn.Module):
         return metrics
 
     def _compute_actor_loss(self, obs: dict[str, torch.Tensor], stddev: float):
+        """Compute the actor (policy gradient) loss.
+
+        NOTE: This is the same as original QAgent._compute_actor_loss.
+        The actor is trained the same way (maximize Q of combined action).
+        The IBRL Q-gating happens only at *action selection* time (act / update_critic),
+        NOT during actor training. The actor always learns to produce good residuals.
+        """
         assert "feat" in obs, "safety check"
 
         action_pred: torch.Tensor = self._act_default(
@@ -498,24 +663,23 @@ class QAgent(nn.Module):
         # Track how much of the RL residual survives after clamping to [-1, 1].
         # If base_action is already near the boundary, adding a residual and clamping
         # effectively discards the RL contribution.
-        if self.residual_actor:
-            with torch.no_grad():
-                base_action = obs["observation.base_action"]
-                residual = action_pred.detach()
-                unclamped = base_action + residual  # what RL *wanted* to execute
-                clamped = combined_action.detach()  # what actually gets executed
+        with torch.no_grad():
+            base_action = obs["observation.base_action"]
+            residual = action_pred.detach()
+            unclamped = base_action + residual  # what RL *wanted* to execute
+            clamped = combined_action.detach()  # what actually gets executed
 
-                # How much of the residual was lost to clamping?
-                clipped_amount = (unclamped - clamped).abs()
-                metrics["residual_analysis/avg_clipped_away"] = clipped_amount.mean().item()
-                metrics["residual_analysis/max_clipped_away"] = clipped_amount.max().item()
+            # How much of the residual was lost to clamping?
+            clipped_amount = (unclamped - clamped).abs()
+            metrics["residual_analysis/avg_clipped_away"] = clipped_amount.mean().item()
+            metrics["residual_analysis/max_clipped_away"] = clipped_amount.max().item()
 
-                # What % of action dimensions hit the [-1,1] boundary?
-                was_clipped = (clipped_amount > 1e-6).float()
-                metrics["residual_analysis/pct_dims_clipped"] = was_clipped.mean().item() * 100.0
+            # What % of action dimensions hit the [-1,1] boundary?
+            was_clipped = (clipped_amount > 1e-6).float()
+            metrics["residual_analysis/pct_dims_clipped"] = was_clipped.mean().item() * 100.0
 
-                # Store tensors for histogram logging in training script
-                metrics["_unclamped_actions"] = unclamped.detach().cpu()
+            # Store tensors for histogram logging in training script
+            metrics["_unclamped_actions"] = unclamped.detach().cpu()
 
         # Log L2 regularization penalty if applied
         if self.cfg.actor.action_l2_reg_weight > 0:

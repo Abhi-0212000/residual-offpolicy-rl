@@ -1257,6 +1257,27 @@ def main(cfg: ResidualTD3DexmgConfig):
                 log_dict["train/residual_l1_magnitude"] = residual_l1_magnitude
                 log_dict["train/residual_l2_magnitude"] = residual_l2_magnitude
                 log_dict["histograms/residual_actions"] = wandb.Histogram(actions.numpy().reshape(-1))
+
+                # ── Residual RL Analysis: histograms ──
+                # Shows the full picture of how residual RL modifies the base BC policy:
+                #   base_action       = what BC policy outputs
+                #   residual_actions   = what RL wants to add (already logged above)
+                #   before_clamp       = base + residual (what RL *intended*)
+                #   after_clamp        = clamp(base + residual, -1, 1) (what actually executes)
+                # Comparing before_clamp vs after_clamp reveals how much RL gets thrown away.
+                if "_base_actions" in metrics:
+                    base_actions = metrics["_base_actions"]
+                    log_dict["residual_analysis/base_action_avg_magnitude"] = torch.mean(torch.abs(base_actions)).item()
+                    log_dict["histograms/bc_base_actions"] = wandb.Histogram(base_actions.numpy().reshape(-1))
+
+                if "_combined_actions" in metrics:
+                    combined_actions = metrics["_combined_actions"]
+                    log_dict["histograms/after_clamp"] = wandb.Histogram(combined_actions.numpy().reshape(-1))
+
+                if "_unclamped_actions" in metrics:
+                    unclamped_actions = metrics["_unclamped_actions"]
+                    log_dict["histograms/before_clamp"] = wandb.Histogram(unclamped_actions.numpy().reshape(-1))
+
             else:
                 residual_l1_magnitude = None
                 residual_l2_magnitude = None
