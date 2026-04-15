@@ -29,9 +29,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglew-dev libglvnd-dev libglx-dev \
     libosmesa6-dev \
     libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
-    ffmpeg libavcodec-dev libavformat-dev libswscale-dev \
     libjpeg-dev libpng-dev \
-    unzip xvfb patchelf \
+    unzip xvfb patchelf software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install FFmpeg 7 from PPA (Ubuntu 22.04 ships FFmpeg 4.4 which is too old for torchcodec)
+# torchcodec requires FFmpeg >= 6 with libavutil.so.58+ / libavutil.so.59
+RUN add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 -y && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg libavcodec-dev libavformat-dev libswscale-dev libavutil-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Make python3.10 the default python/python3, and upgrade pip
@@ -62,7 +68,7 @@ RUN mkdir -p /app/deps && \
 # lerobot requirements + torchcodec
 RUN pip install --no-cache-dir \
     -r /app/resfit/lerobot/lerobot_requirements.txt && \
-    pip install --no-cache-dir torchcodec --index-url https://download.pytorch.org/whl/cu128 && \
+    pip install --no-cache-dir torchcodec==0.10.0 --index-url https://download.pytorch.org/whl/cu128 && \
     pip install --no-cache-dir datasets==3.6.0
 
 # robosuite
@@ -104,7 +110,9 @@ RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.ve
     python -c "from torchrl._torchrl import SumSegmentTreeFp32; print('torchrl C++ OK')" && \
     python -c "import mujoco; print(f'MuJoCo {mujoco.__version__}')" && \
     python -c "import robosuite; print('robosuite OK')" && \
-    python -c "import wandb; print(f'wandb {wandb.__version__}')"
+    python -c "import wandb; print(f'wandb {wandb.__version__}')" && \
+    python -c "from torchcodec.decoders import VideoDecoder; print('torchcodec OK')" && \
+    ffmpeg -version | head -1
 
 # ── Stage 3: Final image with project code ───────────────────────────────────
 FROM deps AS final
