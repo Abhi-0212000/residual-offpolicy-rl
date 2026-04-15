@@ -21,6 +21,7 @@ usage() {
     echo "Usage: $0 {train|bc|resume}"
     echo ""
     echo "  train   — Residual RL fine-tuning (scripts/train_residual_rl.sh)"
+    echo "  train_res_rl_lift — Residual RL fine-tuning for robosuite lift task (scripts/train_residual_rl_lift.sh)"
     echo "  bc      — BC policy training (scripts/train_bc_act.sh)"
     echo "  bc_lift — BC policy (ACT) training for robosuite lift task (scripts/train_bc_lift.sh)"
     echo "  resume  — Resume RL from checkpoint (scripts/resume_residual_rl.sh)"
@@ -34,6 +35,7 @@ usage() {
 
 case "$1" in
     train)  SCRIPT="scripts/train_residual_rl.sh" ;;
+    train_res_rl_lift) SCRIPT="scripts/train_residual_rl_lift.sh" ;;
     bc)     SCRIPT="scripts/train_bc_act.sh" ;;
     bc_lift) SCRIPT="scripts/train_bc_lift.sh" ;;
     resume) SCRIPT="scripts/resume_residual_rl.sh" ;;
