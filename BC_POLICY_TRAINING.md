@@ -21,7 +21,10 @@ This document explains every aspect of the BC (Behavior Cloning) training pipeli
 13. [Checkpoint Saving Strategy](#13-checkpoint-saving-strategy)
 14. [Simulation Environments — MuJoCo, XMLs, Control Loop](#14-simulation-environments--mujoco-xmls-control-loop)
 15. [ACT vs Diffusion — Comparison](#15-act-vs-diffusion--comparison)
-16. [File Reference Map](#16-file-reference-map)
+16. [What the ACT Policy Sees: Complete Input Breakdown](#16-what-the-act-policy-sees-complete-input-breakdown)
+17. [Configuring State Composition (Increasing State Dimensions)](#17-configuring-state-composition-increasing-state-dimensions)
+18. [Configuring Image Resolution](#18-configuring-image-resolution)
+19. [File Reference Map](#19-file-reference-map)
 
 ---
 
@@ -859,7 +862,214 @@ Options: `resnet18`, `resnet34`, `resnet50`. To use ViT requires rewriting the b
 
 ---
 
-## 16. File Reference Map
+## 16. What the ACT Policy Sees: Complete Input Breakdown
+
+### Answer: Both Images AND State (By Default)
+
+The ACT model receives **images + proprioceptive state** at every forward pass. State is optional and can be disabled with `--disable_proprioceptive_obs`.
+
+### Exact Inputs During Training
+
+A training batch from the DataLoader contains:
+
+| Key | Shape (Lift, batch=128) | Type | Used by ACT? |
+|---|---|---|---|
+| `observation.state` | `(128, 9)` | STATE | Yes — projected to transformer token |
+| `observation.images.agentview` | `(128, 3, 84, 84)` | VISUAL | Yes — through ResNet backbone |
+| `observation.images.robot0_eye_in_hand` | `(128, 3, 84, 84)` | VISUAL | Yes — through ResNet backbone |
+| `action` | `(128, 20, 7)` | ACTION | Yes — ground-truth for L1 loss |
+| `action_is_pad` | `(128, 20)` | Mask | Yes — zeros out loss on padded boundary actions |
+
+### How ACT Processes Inputs
+
+1. **Images → ResNet18 backbone → feature map → transformer tokens**
+   - Each camera image → ResNet18 → `layer4` output: `(B, 512, 3, 3)` for 84×84 input
+   - Projected via `encoder_img_feat_input_proj` (Conv2d) to `(B, dim_model, 3, 3)`
+   - Flattened to 9 spatial tokens per camera
+   - With 2 cameras (Lift): 18 image tokens
+
+2. **State → linear projection → 1 transformer token**
+   - `observation.state` (9D for Lift) → `encoder_robot_state_input_proj` → `(B, dim_model)`
+   - Added as a single token to the encoder
+
+3. **Latent → 1 transformer token**
+   - During training: VAE encoder compresses the action into a latent z → `encoder_latent_input_proj(z)` → 1 token
+   - During inference: zeros (no VAE) → `encoder_latent_input_proj(zeros)` → 1 token
+
+4. **Total encoder input for Lift**: 18 image tokens + 1 state token + 1 latent token = **20 tokens**
+
+5. **Decoder**: 20 learned query tokens → cross-attend to encoder output → predict action chunk `(B, 20, 7)`
+
+### How Feature Detection Works (Auto-Sizing)
+
+The policy does NOT hardcode any dimensions. Everything is auto-detected from the dataset:
+
+```
+Dataset metadata → features["observation.state"].shape = (9,)
+                                    ↓
+dataset_to_policy_features() → PolicyFeature(type=STATE, shape=(9,))
+                                    ↓
+ACTConfig.input_features["observation.state"] = PolicyFeature(shape=(9,))
+                                    ↓
+ACT.__init__() → self.encoder_robot_state_input_proj = nn.Linear(9, dim_model)
+```
+
+If you change to a 16D state dataset, the `nn.Linear(16, dim_model)` is created automatically. No code changes needed.
+
+### Vision-Only Mode (`--disable_proprioceptive_obs`)
+
+When you pass `--disable_proprioceptive_obs` to `train_bc_dexmg.py`:
+
+1. At [line ~530](resfit/lerobot/scripts/train_bc_dexmg.py#L530): `observation.state` is removed from `ds_meta.features`
+2. `make_policy()` → `dataset_to_policy_features()` finds no STATE feature → `robot_state_feature = None`
+3. All `if self.config.robot_state_feature:` branches in ACT are skipped
+4. **The model is vision-only** — 18 image tokens + 1 latent token = 19 tokens, no state input
+
+This is useful for testing if the policy relies on proprioception or can work from vision alone.
+
+### During Inference (Eval Rollouts)
+
+`select_action()` receives the same keys from the environment:
+- `observation.state` → from `RobosuiteGymWrapper` (robot sensor data, same keys as dataset)
+- `observation.images.*` → from MuJoCo offscreen rendering at `camera_size=84`
+
+Same normalization is applied. The model returns a single action (or pops from the action chunk queue).
+
+---
+
+## 17. Configuring State Composition (Increasing State Dimensions)
+
+### State Is Baked Into the Dataset
+
+You CANNOT change state composition at training time via CLI flags. The state vector is determined during dataset conversion and must be consistent between:
+
+1. **Dataset** — `get_expected_low_dim_keys()` in [convert_robomimic_to_lerobot.py](resfit/lerobot/dataset/convert_robomimic_to_lerobot.py) ~line 268
+2. **Environment** — `_get_expected_low_dim_keys()` in [dexmg.py](resfit/dexmg/environments/dexmg.py) ~line 460
+
+If these don't match, BC eval rollouts and RL training will crash or silently use wrong state dimensions.
+
+### Current State Per Task
+
+| Task | Robot | State Dim | Keys |
+|---|---|---|---|
+| Lift, Can, Square | Panda (single) | 9D | eef_pos(3) + eef_quat(4) + gripper_qpos(2) |
+| Threading | Panda (single) | 9D | Same as above |
+| TwoArmThreading, BoxCleanup, etc. | Panda (dual) | 18D | robot0 + robot1: eef_pos(3) + eef_quat(4) + gripper_qpos(2) each |
+| TwoArmCoffee, Pouring, CanSort | GR1 Humanoid | 26D | right + left: eef_pos(3) + eef_quat(4) + gripper_qpos(6) each |
+
+### Step-by-Step: Upgrade Lift to 16D
+
+See the detailed recipe in [RESIDUAL_LEARNING.md](RESIDUAL_LEARNING.md#12-state-composition-and-how-to-change-it) — the process is identical for BC and RL.
+
+**Summary:**
+1. Edit `get_expected_low_dim_keys()` in the conversion script — add `"robot0_joint_pos"` (7D)
+2. Edit `_get_expected_low_dim_keys()` in `dexmg.py` — add the same key
+3. Re-render HDF5 with `dataset_states_to_obs.py` (raw HDF5 has all keys)
+4. Re-convert to LeRobot format
+5. Retrain BC with new dataset — ACT auto-detects 16D from `dataset.meta.features["observation.state"].shape`
+6. Retrain RL — also auto-detects from env observation space
+
+### What Auto-Adapts vs What Breaks
+
+| Component | Auto-adapts? | Details |
+|---|---|---|
+| ACT `encoder_robot_state_input_proj` | **Yes** — `nn.Linear(state_dim, dim_model)` | Reads shape from dataset metadata |
+| ACT normalization stats (μ, σ) | **Yes** — computed per-dim from new dataset | New dims get their own stats |
+| RL `StateStandardizer` | **Yes** — reads from `dataset.meta.stats` | Auto-adapts to new dim count |
+| RL critic/actor state input | **Yes** — reads `lowdim_dim` from env obs space | Auto-adapts |
+| Old BC checkpoint | **No** — trained on 9D, cannot load into 16D model | Must retrain from scratch |
+| Old RL checkpoint | **No** — network dimensions mismatch | Must retrain from scratch |
+
+### Example: 25D State (Lift with Velocities)
+
+```python
+# In both conversion script and dexmg.py:
+panda_low_dim_keys_single = [
+    "robot0_eef_pos",          # 3
+    "robot0_eef_quat",         # 4
+    "robot0_joint_pos",        # 7
+    "robot0_joint_vel",        # 7
+    "robot0_gripper_qpos",     # 2
+    "robot0_gripper_qvel",     # 2
+]
+# Total: 25D
+```
+
+**Caveat:** Velocities can be noisier than positions. Check if the added signal actually helps by comparing eval success rates.
+
+---
+
+## 18. Configuring Image Resolution
+
+### Current Resolution: 84×84
+
+All images are 84×84 throughout the pipeline — in the dataset, during BC training, during BC eval, and during RL training. This is NOT a single config flag — it's set independently at each stage.
+
+### Where Resolution Is Determined
+
+| Stage | Where It's Set | How to Change |
+|---|---|---|
+| **Dataset** | `dataset_states_to_obs.py --camera_height 84 --camera_width 84` | Re-render HDF5 with new size |
+| **BC training images** | From dataset (no resize) | Change dataset |
+| **BC eval rollouts** | `--eval_camera_size 84` on CLI | Change CLI arg |
+| **RL env rendering** | `camera_size=84` default in `dexmg.py` | Edit code or pass parameter |
+
+### Does the ACT Model Care About Image Size?
+
+**No.** The ResNet18 backbone is fully convolutional — it accepts any spatial resolution. The output feature map scales:
+
+| Input | ResNet layer4 Output | Spatial Tokens (per camera) |
+|---|---|---|
+| 84×84 | 3×3 | 9 |
+| 96×96 | 3×3 | 9 |
+| 128×128 | 4×4 | 16 |
+| 224×224 | 7×7 | 49 |
+
+The transformer encoder handles variable sequence lengths, so **no ACT code changes are needed** for different resolutions — just retrain with the new dataset.
+
+### Step-by-Step: Switching to 128×128
+
+```bash
+# 1. Re-render HDF5 at 128×128
+cd deps/robomimic
+python robomimic/scripts/dataset_states_to_obs.py \
+    --dataset datasets/lift/mh/demo_v15.hdf5 \
+    --output_name image_128.hdf5 \
+    --done_mode 2 \
+    --camera_names agentview robot0_eye_in_hand \
+    --camera_height 128 --camera_width 128
+
+# 2. Convert to LeRobot format
+cd ../..
+python resfit/lerobot/dataset/convert_robomimic_to_lerobot.py \
+    --dataset deps/robomimic/datasets/lift/mh/image_128.hdf5 \
+    --output_dir ~/lerobot_datasets/lift-mh-128
+
+# 3. Train BC
+bash scripts/train_bc_lift.sh   # ← change DATASET to the new path
+# Also set: EVAL_CAMERA_SIZE=128
+
+# 4. For RL (if proceeding to residual RL), edit dexmg.py or pass camera_size=128
+```
+
+### Tradeoffs
+
+| Resolution | BC training speed | RL VRAM per env | Visual detail | Practical advice |
+|---|---|---|---|---|
+| 64×64 | Fastest | ~50 MB | Low — may lose small details | Only for quick prototyping |
+| **84×84** | Fast | ~100 MB | **Good enough for tabletop** | **Default — recommended** |
+| 128×128 | Medium | ~200 MB | Better for small objects | Worthwhile if 84 isn't enough |
+| 224×224 | Slow | ~500 MB | Maximum detail | Overkill for most robosuite tasks |
+
+### Warning: BC and RL Must Use the Same Resolution
+
+If BC was trained on 84×84 images and RL renders at 128×128, the frozen BC policy will receive images at a different resolution than it was trained on. ResNet doesn't crash (it's resolution-agnostic) but the **feature statistics will be off** — the BC base actions will be lower quality, degrading residual RL performance.
+
+**Always match:** dataset resolution = BC eval resolution = RL env resolution.
+
+---
+
+## 19. File Reference Map
 
 ### Core training
 

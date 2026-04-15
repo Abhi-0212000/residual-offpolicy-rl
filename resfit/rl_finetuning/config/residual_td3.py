@@ -161,6 +161,26 @@ class ResidualTD3CanConfig(ResidualTD3DexmgConfig):
 
 
 @dataclass
+class ResidualTD3CubeLiftConfig(ResidualTD3DexmgConfig):
+    task: str = "Lift"
+
+    offline_data: OfflineDataConfig = field(
+        default_factory=lambda: OfflineDataConfig(
+            name="ankile/robomimic-mh-lift-image",
+            num_episodes=50,
+        )
+    )
+
+    base_policy: BasePolicyConfig = field(
+        default_factory=lambda: BasePolicyConfig(
+            wandb_id="resfit-robomimic-lift-bc/3pghetmx",
+        )
+    )
+
+    wandb: WandBConfig = field(default_factory=lambda: WandBConfig(project="robomimic-lift-residual-td3"))
+
+
+@dataclass
 class ResidualTD3SquareConfig(ResidualTD3DexmgConfig):
     task: str = "Square"
 
@@ -286,6 +306,7 @@ class ResidualTD3TwoArmCanSortConfig(ResidualTD3BoxCleanConfig):
 cs = ConfigStore.instance()
 cs.store(name="residual_td3_dexmg_config", node=ResidualTD3DexmgConfig)
 cs.store(name="residual_td3_can_config", node=ResidualTD3CanConfig)
+cs.store(name="residual_td3_cube_lift_config", node=ResidualTD3CubeLiftConfig)
 cs.store(name="residual_td3_square_config", node=ResidualTD3SquareConfig)
 cs.store(name="residual_td3_box_clean_config", node=ResidualTD3BoxCleanConfig)
 cs.store(name="residual_td3_coffee_config", node=ResidualTD3CoffeeConfig)

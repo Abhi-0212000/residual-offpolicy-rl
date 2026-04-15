@@ -16,6 +16,12 @@ Back to: [RESIDUAL_RL_TRAINING.md](RESIDUAL_RL_TRAINING.md)
 6. [Numerical Example: End-to-End Walkthrough](#6-numerical-example-end-to-end-walkthrough)
 7. [Why the Residual Learning Rate Is So Low](#7-why-the-residual-learning-rate-is-so-low)
 8. [Comparison: RL From Scratch vs Residual RL](#8-comparison-rl-from-scratch-vs-residual-rl)
+9. [What the RL Agent Sees: Observations](#9-what-the-rl-agent-sees-observations)
+10. [Reward Structure](#10-reward-structure)
+11. [Image Resolution](#11-image-resolution)
+12. [State Composition and How to Change It](#12-state-composition-and-how-to-change-it)
+13. [Changing Image Resolution](#13-changing-image-resolution)
+14. [Adding Custom Gym Wrappers](#14-adding-custom-gym-wrappers)
 
 ---
 
@@ -362,5 +368,475 @@ This 100× ratio ensures the critic's Q-estimates stabilize before the actor tri
 4. **action_scale too large** — the residual overpowers the base, reverting to scratch RL
 
 The 0.2 action_scale is a sweet spot: large enough for meaningful corrections, small enough to keep the policy well-behaved.
+
+---
+
+## 9. What the RL Agent Sees: Observations
+
+The RL agent (both critic and actor) receives **images + state + base action** at every step. This is different from BC training, which sees images + state only.
+
+### Observation Structure (per step, Lift task)
+
+| Key | Shape | Source | Description |
+|---|---|---|---|
+| `observation.images.agentview` | `(1, 3, 84, 84)` | MuJoCo render | Third-person workspace camera |
+| `observation.images.robot0_eye_in_hand` | `(1, 3, 84, 84)` | MuJoCo render | Wrist-mounted camera |
+| `observation.state` | `(1, 9)` | Robot sensors → z-score standardized | `eef_pos(3) + eef_quat(4) + gripper_qpos(2)` |
+| `observation.base_action` | `(1, 7)` | Frozen BC policy → ActionScaler | Normalized base action in [-1, 1] |
+
+### How Observations Flow Through the Pipeline
+
+```
+MuJoCo env → raw obs {images, state}
+                ↓
+BasePolicyVecEnvWrapper._augment_obs():
+  1. base_action = frozen_BC_policy.select_action(raw_obs)
+  2. base_naction = ActionScaler.scale(base_action)   → [-1, 1]
+  3. obs["observation.base_action"] = base_naction
+  4. obs["observation.state"] = StateStandardizer.standardize(state)   → z-score
+                ↓
+augmented_obs → Actor and Critic networks
+```
+
+### What the Actor Network Sees
+
+The actor receives:
+- **Images** through per-camera `VitEncoder` (MinViT) → feature embeddings per camera
+- **Standardized state** (z-scored: zero mean, unit std)
+- **Base normalized action** → so the residual knows what the BC policy suggests
+
+The actor outputs: `residual_naction = tanh(MLP(features)) * action_scale`
+
+### What the Critic Network Sees
+
+The critic receives the same observations as the actor PLUS the combined action (base + residual) to estimate Q-values.
+
+### State Standardization (RL)
+
+Unlike BC which uses per-feature MEAN_STD normalization, the RL pipeline uses a dedicated `StateStandardizer`:
+
+$$s_{\text{norm}} = \frac{s - \mu}{\max(\sigma, 0.1)}$$
+
+Stats ($\mu$, $\sigma$) come from the **offline dataset** (`dataset.meta.stats["observation.state"]`). The `min_std=0.1` floor prevents division by near-zero standard deviation.
+
+---
+
+## 10. Reward Structure
+
+### Sparse Reward (Default — What This Codebase Uses)
+
+`robosuite.make()` in `dexmg.py` does NOT pass `reward_shaping`, so robosuite defaults to `reward_shaping=False` (sparse).
+
+$$r_t = \begin{cases} 1.0 & \text{if } \texttt{\_check\_success()} \text{ is True} \\ 0.0 & \text{otherwise} \end{cases}$$
+
+**Episode terminates immediately on first success.** In `dexmg.py` `step()`:
+
+```python
+success = reward == 1.0
+terminated_scalar = bool(success)
+```
+
+So with a 100-step horizon, the agent gets 0 for every step until either:
+- Cube is lifted → reward = 1.0 → episode terminates immediately
+- 100 steps elapse → episode truncates with reward = 0.0
+
+**For N-step returns with sparse reward:** The reward signal only appears in the last step of successful episodes. With `n_step=5` and `γ=0.995`, a success at step $t$ yields:
+
+$$G_t = 0 + 0\gamma + 0\gamma^2 + 0\gamma^3 + 1.0 \cdot \gamma^4 = 0.98$$
+
+Higher `n_step` helps propagate this reward back through more Q-value estimates.
+
+**v_min/v_max for distributional critic (sparse reward):** With only 0/1 rewards, the maximum possible return is 1.0 (success at the current step with no discount). So `v_min=0.0, v_max=1.0` is correct.
+
+### Dense Reward (Available via Code Change)
+
+If you add `reward_shaping=True` to `robosuite.make()` in `dexmg.py` (around line 214), the Lift reward becomes:
+
+| Component | Range | Description |
+|---|---|---|
+| Reaching | `[0.0, 1.0]` | Tanh of distance to cube |
+| Grasping | `{0.0, 0.25}` | Binary — gripper contacts cube or not |
+| Lifting | `{0.0, 1.0}` | Binary — cube above threshold height or not |
+| **Total** | **[0.0, 2.25]** | Sum of components |
+
+Robosuite normalizes by `reward_scale / 2.25` (default `reward_scale=1.0`) → per-step reward in `[0.0, 1.0]`.
+
+**v_min/v_max for distributional critic (dense reward):** With per-step reward ∈ [0, 1.0], γ=0.995, horizon=100:
+
+$$V_{\max} = \sum_{t=0}^{99} \gamma^t \cdot 1.0 = \frac{1 - 0.995^{100}}{1 - 0.995} \approx 63.5$$
+
+Realistically a good policy solving in ~50 steps sees returns around 20–40. Safe range: `v_min=0.0, v_max=70.0`.
+
+**To enable dense reward:** Edit `dexmg.py`, add to `robosuite.make()` call in `DexMimicGenEnv.__init__()`:
+```python
+env_kwargs = {
+    ...
+    "reward_shaping": True,    # ← add this
+}
+```
+Then update `v_min`/`v_max` and potentially increase `n_step` since the reward signal is denser.
+
+---
+
+## 11. Image Resolution
+
+### Current: 84×84 Everywhere
+
+| Stage | Resolution | Configurable? |
+|---|---|---|
+| Dataset (ankile/robomimic-mh-lift-image) | 84×84 | Fixed at conversion time |
+| BC training | Whatever is in dataset (84×84) | No CLI flag for training size |
+| BC eval rollouts | 84×84 | Yes: `--eval_camera_size 84` |
+| RL training (env rendering) | 84×84 | **No** — hardcoded default in `dexmg.py` |
+| RL critic/actor (MinViT patches) | 84×84 (**hardcoded**) | **No** — `num_patch=81` in `min_vit.py` |
+
+### Why 84×84?
+
+- Standard benchmark resolution for MuJoCo-based RL (from Atari/DM Control tradition)
+- Small enough for fast rendering + training (fit many envs in VRAM)
+- Sufficient for tabletop manipulation tasks (objects are large relative to pixels)
+
+### Cameras Per Task
+
+| Task | Cameras | Count |
+|---|---|---|
+| Lift, Can, Square | `agentview` + `robot0_eye_in_hand` | 2 |
+| TwoArmCoffee, Pouring, CanSort | `agentview` + `robot0_eye_in_left_hand` + `robot0_eye_in_right_hand` | 3 |
+| Transport | `agentview` + `robot0_eye_in_hand` + `robot1_eye_in_hand` + `shouldercamera0` + `shouldercamera1` | 5 |
+
+---
+
+## 12. State Composition and How to Change It
+
+### Current State (Lift Task): 9D
+
+| Key | Dims | Content |
+|---|---|---|
+| `robot0_eef_pos` | 3 | End-effector XYZ position (world frame) |
+| `robot0_eef_quat` | 4 | End-effector quaternion orientation |
+| `robot0_gripper_qpos` | 2 | Gripper finger joint positions |
+| **Total** | **9** | |
+
+**What's NOT included:** joint positions (7D), joint velocities (7D), gripper velocities (2D), EE velocities (6D), object state (14D).
+
+### All Available Keys for Lift (Panda)
+
+| Key | Dims | Description |
+|---|---|---|
+| `robot0_eef_pos` | 3 | EE position |
+| `robot0_eef_quat` | 4 | EE orientation |
+| `robot0_joint_pos` | 7 | 7 revolute joint angles |
+| `robot0_joint_vel` | 7 | Joint angular velocities |
+| `robot0_gripper_qpos` | 2 | Gripper finger positions |
+| `robot0_gripper_qvel` | 2 | Gripper finger velocities |
+| `robot0_eef_vel_lin` | 3 | EE linear velocity |
+| `robot0_eef_vel_ang` | 3 | EE angular velocity |
+| `object` | 14 | Cube pos(3) + quat(4) + vel(7) |
+
+### Example: 16D State (adding joint_pos)
+
+To increase from 9D to 16D (`eef_pos + eef_quat + joint_pos + gripper_qpos`):
+
+#### Step 1: Create a New Dataset
+
+The state composition is **baked into the dataset at conversion time**. You cannot change it at training time. Edit `get_expected_low_dim_keys()` in two files then re-convert:
+
+**File 1:** [resfit/lerobot/dataset/convert_robomimic_to_lerobot.py](resfit/lerobot/dataset/convert_robomimic_to_lerobot.py) ~line 268
+
+```python
+panda_low_dim_keys = [
+    "robot0_eef_pos",          # 3D
+    "robot0_eef_quat",         # 4D
+    "robot0_joint_pos",        # 7D  ← ADD THIS
+    "robot0_gripper_qpos",     # 2D
+    "robot1_eef_pos",
+    "robot1_eef_quat",
+    "robot1_gripper_qpos",
+]
+```
+
+**File 2:** [resfit/dexmg/environments/dexmg.py](resfit/dexmg/environments/dexmg.py) ~line 460 — `_get_expected_low_dim_keys()`
+
+```python
+panda_low_dim_keys_single = [
+    "robot0_eef_pos",
+    "robot0_eef_quat",
+    "robot0_joint_pos",        # ← ADD THIS (must match dataset)
+    "robot0_gripper_qpos",
+]
+```
+
+**Both files MUST have the same keys in the same order.** If they don't match, the dataset state and env state will have different dimensions — causing runtime crashes or silent bugs.
+
+#### Step 2: Re-convert the HDF5 Dataset
+
+```bash
+# Get the raw HDF5 (if you don't have it already)
+cd deps/robomimic
+python robomimic/scripts/download_datasets.py --tasks lift --dataset_types mh --hdf5_types raw
+
+# Render with cameras
+python robomimic/scripts/dataset_states_to_obs.py \
+    --dataset datasets/lift/mh/demo_v15.hdf5 \
+    --output_name image_custom.hdf5 \
+    --done_mode 2 \
+    --camera_names agentview robot0_eye_in_hand \
+    --camera_height 84 --camera_width 84
+
+# Convert to LeRobot format
+cd ../..
+python resfit/lerobot/dataset/convert_robomimic_to_lerobot.py \
+    --dataset deps/robomimic/datasets/lift/mh/image_custom.hdf5 \
+    --output_dir ~/lerobot_datasets/lift-mh-16d \
+    --max_episodes 300
+```
+
+#### Step 3: Retrain Everything
+
+1. **Retrain BC** with `--dataset ~/lerobot_datasets/lift-mh-16d` — the ACT policy auto-detects the new 16D state shape from `dataset.meta.features["observation.state"].shape`
+2. **Retrain RL** — the RL agent auto-detects `lowdim_dim` from `env.observation_space["observation.state"].shape[1]` and `StateStandardizer` reads new stats from the dataset
+
+**Nothing else needs to change in code.** The ACT model creates `nn.Linear(state_dim, dim_model)` dynamically. The RL critic/actor creates `nn.Linear(lowdim_dim, hidden_dim)` dynamically. Both auto-adapt.
+
+### Example: 25D State (adding velocities)
+
+Same process but with more keys:
+
+```python
+panda_low_dim_keys_single = [
+    "robot0_eef_pos",          # 3
+    "robot0_eef_quat",         # 4
+    "robot0_joint_pos",        # 7
+    "robot0_joint_vel",        # 7
+    "robot0_gripper_qpos",     # 2
+    "robot0_gripper_qvel",     # 2
+]
+# Total: 25D
+```
+
+**Caveat:** The HDF5 must contain these keys. The raw robomimic HDF5 has all of them. But if you downloaded a pre-processed file, some keys may be missing. Check with:
+
+```python
+import h5py
+f = h5py.File("image.hdf5", "r")
+print(list(f["data/demo_0/obs"].keys()))
+```
+
+---
+
+## 13. Changing Image Resolution
+
+Changing from 84×84 requires coordinated changes across the entire pipeline.
+
+### What Must Change
+
+| Component | File | Change Required |
+|---|---|---|
+| Dataset | Re-convert HDF5 with new `--camera_height/width` | New resolution in HDF5 |
+| BC training | No code change (auto-detects from dataset) | Just pass new dataset |
+| BC eval | `--eval_camera_size <new_size>` | CLI flag |
+| RL env rendering | [dexmg.py](resfit/dexmg/environments/dexmg.py) ~line 92 | Change `camera_size=84` default or pass explicitly |
+| RL vision backbone | [min_vit.py](resfit/rl_finetuning/off_policy/networks/min_vit.py) line 35 | **MUST update `num_patch`** |
+
+### MinViT Patch Count Math
+
+`PatchEmbed2` has two conv layers:
+- Conv1: `kernel=8, stride=4` → output spatial: `(H - 8) / 4 + 1`
+- Conv2: `kernel=3, stride=2` → output spatial: `(prev - 3) / 2 + 1`
+- `num_patch = spatial_h × spatial_w`
+
+| Input Size | Conv1 Output | Conv2 Output | num_patch | Status |
+|---|---|---|---|---|
+| 84×84 | 20×20 | 9×9 | **81** | Current default |
+| 96×96 | 23×23 | 11×11 | **121** | Requires code change |
+| 128×128 | 31×31 | 15×15 | **225** | Requires code change |
+| 64×64 | 15×15 | 7×7 | **49** | Requires code change |
+
+To change, edit `PatchEmbed2` in [min_vit.py](resfit/rl_finetuning/off_policy/networks/min_vit.py):
+```python
+# self.num_patch = 81  # for 84x84
+self.num_patch = 121   # for 96x96
+```
+
+There is also `PatchEmbed1` with `kernel=8, stride=8`:
+```python
+# PatchEmbed1: num_patch = 144 for 96x96
+```
+But `PatchEmbed1` is unused — only `PatchEmbed2` (via `embed_style="embed2"`) is used in practice.
+
+### BC Side: ACT Uses ResNet (Variable Input Size)
+
+The ACT backbone is ResNet18, which is fully convolutional and handles any spatial resolution. The output feature map size changes:
+- 84×84 → layer4 output 3×3 → 9 spatial tokens per camera
+- 128×128 → layer4 output 4×4 → 16 spatial tokens per camera
+
+The ACT transformer encoder handles variable sequence lengths, so **no ACT code changes are needed** — just retrain with the new dataset.
+
+### Step-by-Step: Switching to 128×128
+
+```bash
+# 1. Re-render HDF5 at 128×128
+python robomimic/scripts/dataset_states_to_obs.py \
+    --dataset datasets/lift/mh/demo_v15.hdf5 \
+    --output_name image_128.hdf5 \
+    --done_mode 2 \
+    --camera_names agentview robot0_eye_in_hand \
+    --camera_height 128 --camera_width 128
+
+# 2. Convert to LeRobot format
+python resfit/lerobot/dataset/convert_robomimic_to_lerobot.py \
+    --dataset deps/robomimic/datasets/lift/mh/image_128.hdf5 \
+    --output_dir ~/lerobot_datasets/lift-mh-128
+```
+
+Then edit `min_vit.py`:
+```python
+self.num_patch = 225  # for 128x128
+```
+
+And either:
+- Edit `dexmg.py` default: `camera_size: int = 128`
+- Or pass `camera_size=128` in `create_vectorized_env()` call in `train_residual_td3.py`
+
+Retrain BC first, then RL.
+
+---
+
+## 14. Adding Custom Gym Wrappers
+
+### The RL Environment Pipeline
+
+```
+robosuite.make()
+    ↓
+RobosuiteGymWrapper          ← single env, Gymnasium API
+    ↓
+[INSERT PER-ENV WRAPPERS HERE]  ← Option A
+    ↓
+AsyncVectorEnv / SyncVectorEnv   ← vectorization (N copies)
+    ↓
+VectorizedEnvWrapper          ← numpy → torch tensor conversion
+    ↓
+[INSERT POST-VEC WRAPPERS HERE]  ← Option B
+    ↓
+BasePolicyVecEnvWrapper       ← adds base policy + residual combining
+    ↓
+Training loop
+```
+
+### Option A: Per-Environment Wrapper (Before Vectorization)
+
+Best for: reward shaping, observation filtering, action transformations, curriculum.
+
+Edit `make_dexmimicgen_env()` in [dexmg.py](resfit/dexmg/environments/dexmg.py) ~line 643:
+
+```python
+def _make():
+    env = RobosuiteGymWrapper(
+        env_name=env_name,
+        camera_size=camera_size,
+        render_size=render_size,
+        image_keys=image_keys,
+        headless=headless,
+    )
+    # ─── Insert your wrapper here ───
+    env = YourCustomWrapper(env)
+    # ────────────────────────────────
+    return env
+```
+
+**Example — Dense reward shaping wrapper:**
+
+```python
+import gymnasium as gym
+import numpy as np
+
+class DenseRewardWrapper(gym.Wrapper):
+    """Add a small reward bonus for reaching toward the cube."""
+    
+    def __init__(self, env, reach_bonus_scale=0.1):
+        super().__init__(env)
+        self.reach_bonus_scale = reach_bonus_scale
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        # Add distance-based bonus (smaller distance → larger bonus)
+        if "robot0_eef_pos" in info and "cube_pos" in info:
+            dist = np.linalg.norm(info["robot0_eef_pos"] - info["cube_pos"])
+            reach_bonus = self.reach_bonus_scale * max(0, 1.0 - dist)
+            reward += reach_bonus
+        return obs, reward, terminated, truncated, info
+```
+
+**Important:** Per-env wrappers run in **forked subprocess** workers (AsyncVectorEnv). They must be picklable and cannot reference GPU tensors or shared state.
+
+### Option B: Post-Vectorization Wrapper
+
+Best for: batched reward modifications, logging, episode statistics, frame stacking.
+
+Edit `get_envs()` in [train_residual_td3.py](resfit/rl_finetuning/scripts/train_residual_td3.py) ~line 296:
+
+```python
+def get_envs(...):
+    vec_env = create_vectorized_env(
+        env_name=env_name, num_envs=num_envs, device=device,
+        video_key=video_key, debug=debug, headless=cfg.headless,
+    )
+    # ─── Insert post-vec wrapper here ───
+    vec_env = YourVecEnvWrapper(vec_env)
+    # ────────────────────────────────────
+    return BasePolicyVecEnvWrapper(
+        vec_env=vec_env, base_policy=base_policy,
+        action_scaler=action_scaler, state_standardizer=state_standardizer,
+    )
+```
+
+**Example — Episode return logger:**
+
+```python
+class EpisodeReturnTracker:
+    """Track per-episode returns for debugging."""
+    
+    def __init__(self, vec_env):
+        self.vec_env = vec_env
+        self.episode_returns = torch.zeros(vec_env.num_envs)
+    
+    def reset(self, **kwargs):
+        obs, info = self.vec_env.reset(**kwargs)
+        self.episode_returns.zero_()
+        return obs, info
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.vec_env.step(action)
+        self.episode_returns += reward.squeeze()
+        done = terminated | truncated
+        if done.any():
+            for i in torch.where(done)[0]:
+                print(f"Env {i}: episode return = {self.episode_returns[i]:.3f}")
+                self.episode_returns[i] = 0.0
+        return obs, reward, terminated, truncated, info
+    
+    # Delegate everything else
+    def __getattr__(self, name):
+        return getattr(self.vec_env, name)
+```
+
+### Existing Wrapper to Follow
+
+The canonical example is `BasePolicyVecEnvWrapper` in [resfit/rl_finetuning/wrappers/residual_env_wrapper.py](resfit/rl_finetuning/wrappers/residual_env_wrapper.py). Key patterns:
+
+1. Stores `self.vec_env` and delegates via `__getattr__`
+2. Has `observation_space` and `action_space` properties
+3. `reset()` returns `(obs_dict, info)`
+4. `step()` returns `(obs_dict, reward, terminated, truncated, info)`
+5. Modifies observations in `_augment_obs()` — copies dict, modifies tensors
+
+### Things to Watch Out For
+
+1. **Observation space must stay consistent.** If your wrapper adds/removes observation keys, update `observation_space` accordingly, otherwise the replay buffer will crash.
+2. **Don't modify images in-place.** The `VectorizedEnvWrapper` creates torch tensors that may share memory. Always `.clone()` before modifying.
+3. **Per-env wrappers must be picklable** (AsyncVectorEnv forks). No lambdas, no GPU tensors, no file handles.
+4. **Reward modifications affect Q-value scale.** If you add dense reward, update `v_min`/`v_max` for distributional critics.
+5. **N-step returns.** Reward shaping wrappers interact with n-step return calculation. Make sure your modified rewards are compatible with the n-step buffer logic.
 
 Back to: [RESIDUAL_RL_TRAINING.md](RESIDUAL_RL_TRAINING.md)
