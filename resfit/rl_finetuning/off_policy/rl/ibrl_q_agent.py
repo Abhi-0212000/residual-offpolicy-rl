@@ -377,6 +377,16 @@ class QAgent_ibrl(nn.Module):
         Original: Always returns the RL residual unconditionally.
         IBRL:     Returns the RL residual ONLY if critic says it's better than BC.
 
+        Critic ensemble aggregation:
+        ─────────────────────────────────────────────
+        Both candidates are batched together as [B*2, action_dim] and evaluated
+        in a single forward pass through the critic ensemble. All K heads score
+        every candidate, then a random subset of `min_q_heads` heads is selected
+        via `torch.randperm`, and the min over that subset yields one scalar per
+        candidate ([B*2, 1]). This is reshaped to [B, 2] and argmax picks the
+        winner. Because the two candidates share the same `randperm`, the same
+        random head subset judges both, ensuring a fair comparison.
+
         Epsilon-greedy (optional, during training):
         ─────────────────────────────────────────────
         With probability (1 - eps_greedy), pick a random candidate instead of
