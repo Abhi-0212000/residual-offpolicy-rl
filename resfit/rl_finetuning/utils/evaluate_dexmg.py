@@ -154,6 +154,7 @@ def run_dexmg_evaluation(
 
     successes: list[bool] = []  # episode-level success flags
     returns: list[float] = []  # episode-level undiscounted returns
+    ep_ever_succeeded: list[bool] = [False] * num_envs  # track success across episode
 
     # Q-trajectory data for plotting ------------------------------------
     all_q_trajectories: list[list[float]] = []  # Store Q-trajectories for all episodes
@@ -208,10 +209,14 @@ def run_dexmg_evaluation(
             ep_rewards[env_idx].append(reward[env_idx].item())
             ep_q_preds[env_idx].append(q_pred[env_idx].item())
 
+            # Track if task succeeded at any point during this episode
+            if reward[env_idx].item() == 1.0:
+                ep_ever_succeeded[env_idx] = True
+
             if done_flags[env_idx]:
                 # Episode finished -- aggregate results ----------------
                 ep_return = float(sum(ep_rewards[env_idx]))
-                is_success = bool(reward[env_idx].item() == 1.0)
+                is_success = ep_ever_succeeded[env_idx]
 
                 # Update progress display
                 progress_dots[done_episodes] = "✓" if is_success else "✗"
@@ -252,6 +257,7 @@ def run_dexmg_evaluation(
                 # Reset per-env caches --------------------------------
                 ep_rewards[env_idx].clear()
                 ep_q_preds[env_idx].clear()
+                ep_ever_succeeded[env_idx] = False
 
                 done_episodes += 1
 

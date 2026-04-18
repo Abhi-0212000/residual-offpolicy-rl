@@ -152,7 +152,9 @@ class RobosuiteGymWrapper:
         # Store video camera key for rendering (will be set by create_vectorized_env)
         self.video_key = None
 
+        self.reward_shaping = reward_shaping
         self.episode_steps = 0
+        self._ever_succeeded = False
 
         if env_name not in ENV_ROBOTS:
             raise ValueError(f"Unknown robosuite environment: {env_name}")
@@ -298,6 +300,7 @@ class RobosuiteGymWrapper:
         processed_obs = self._process_obs(obs)
         self._last_obs = processed_obs  # Store for video recording
         self.episode_steps = 0
+        self._ever_succeeded = False
         return processed_obs, {}
 
     def step(self, action):
@@ -317,18 +320,29 @@ class RobosuiteGymWrapper:
         # Return scalar values - Gymnasium will handle device placement and batching in vectorized env
         reward_scalar = float(reward)
 
-        # Terminate episode on success (reward == 1) to shortcircuit successful rollouts
-        success = reward == 1.0
-        terminated_scalar = bool(success)
-        truncated_scalar = bool(done)  # Robosuite returns done when timeout
+        # Track whether the task was ever completed during this episode
+        if reward == 1.0:
+            self._ever_succeeded = True
+
+        # With reward_shaping, do NOT terminate on success — let the episode
+        # run to the horizon so the agent collects reward=1.0 every post-success
+        # step. This ensures success gives higher return than failure.
+        # With sparse reward, terminate immediately on success (original behavior).
+        if self.reward_shaping:
+            terminated_scalar = False
+            truncated_scalar = bool(done)  # Only horizon timeout ends the episode
+        else:
+            terminated_scalar = bool(reward == 1.0)
+            truncated_scalar = bool(done)
 
         if terminated_scalar or truncated_scalar:
             info = {
                 **info,
-                "success": success,
+                "success": self._ever_succeeded,
                 "episode_steps": self.episode_steps,
             }
             self.episode_steps = 0
+            self._ever_succeeded = False
 
         return processed_obs, reward_scalar, terminated_scalar, truncated_scalar, info
 
