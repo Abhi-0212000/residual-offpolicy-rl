@@ -47,7 +47,7 @@ set -euo pipefail
 # To use a local dataset instead of HuggingFace, set DATASET to the local path:
 #   DATASET="/path/to/my-local-lerobot-dataset"
 #
-DATASET="ankile/robomimic-mh-lift-image"
+DATASET="ankile/robomimic-mh-can-image"
 
 # ── Episode Count ────────────────────────────────────────────────────────────
 # BC uses ALL episodes in the dataset for training (all 300 in this case).
@@ -180,7 +180,7 @@ POLICY_KWARGS=""
 # ║  TRAINING                                                               ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
-STEPS=100000                              # Total optimization steps
+STEPS=50000                              # Total optimization steps
                                           # Lift is simpler than Coffee — 100K usually suffices
                                           # 50K for quick tests, 200K for thorough training
 BATCH_SIZE=128                            # Batch size. 128 fits 16GB GPU, 256 on 48GB
@@ -198,7 +198,7 @@ SAVE_FREQ=5000                            # Save checkpoint every N steps
 # ║  EVALUATION (rollouts in Robosuite simulator)                           ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
-EVAL_ENV="Lift"                           # Robosuite environment name. Must match dataset task.
+EVAL_ENV="Can"                           # Robosuite environment name. Must match dataset task.
                                           # This is used for rollout evaluation during training.
 ROLLOUT_FREQ=5000                         # Run eval rollouts every N steps
                                           # 5K = decent balance of eval frequency vs speed
@@ -213,25 +213,10 @@ EVAL_VIDEO_KEY="observation.images.agentview"   # Camera for recorded eval video
 EVAL_RENDER_SIZE=224                      # High-res video recording (pixels)
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  IMAGE RESIZE                                                           ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
-#
-# Resize training images to this square size (e.g. 84).
-# Use when your dataset has a different resolution than you want to train at.
-# Example: dataset is 256×256 but you want to train at 84×84.
-# Leave empty ("") to use the native dataset resolution.
-#
-# When set, eval_camera_size is automatically matched unless you override it.
-# And make sure the EVAL_CAMERA_SIZE matches the IMAGE_SIZE to avoid resolution mismatch during eval rollouts.
-#
-# IMAGE_SIZE=""
-IMAGE_SIZE=84                           # ← uncomment to resize to 84×84
-
-# ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  WANDB LOGGING                                                          ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
-WANDB_PROJECT="resfit-robomimic-lift-bc"         # WandB project name
+WANDB_PROJECT="resfit-robomimic-can-bc"         # WandB project name
 WANDB_ENABLE="--wandb_enable"             # Set to "" to disable WandB logging
 # WANDB_ENABLE=""                         # ← uncomment to disable WandB
 WANDB_ENTITY=""                           # WandB entity (team). "" = your default entity
@@ -248,9 +233,9 @@ RESUME_RUN_ID=""                          # WandB run ID to resume (grabs 'lates
 # ║  CLEANUP                                                                ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
-NO_CLEANUP="--no_cleanup"                 # Keep all checkpoint files after training
+# NO_CLEANUP="--no_cleanup"                 # Keep all checkpoint files after training
                                           # Remove this flag to auto-delete intermediate checkpoints
-# NO_CLEANUP=""                           # ← uncomment to auto-cleanup
+NO_CLEANUP=""                           # ← uncomment to auto-cleanup
 
 # ============================================================================
 # Build command
@@ -294,7 +279,6 @@ CMD=(
 [[ -n "${POLICY_KWARGS}" ]]     && CMD+=(--policy_kwargs "${POLICY_KWARGS}")
 [[ -n "${DISABLE_PROPRIO}" ]]   && CMD+=("${DISABLE_PROPRIO}")
 [[ -n "${POLICY_CAMERAS}" ]]    && CMD+=(--policy_cameras ${POLICY_CAMERAS})
-[[ -n "${IMAGE_SIZE}" ]]        && CMD+=(--image_size "${IMAGE_SIZE}")
 
 # Execute
 "${CMD[@]}"

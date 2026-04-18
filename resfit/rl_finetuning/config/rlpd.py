@@ -261,6 +261,10 @@ class RLPDDexmgConfig:
     # headless=True  → EGL offscreen rendering (fast, no display needed)
     # headless=False → GLFW on-screen MuJoCo viewer window (slower, for visualization)
     headless: bool = True
+    # reward_shaping: if True the env returns dense shaped rewards per step;
+    # if False only a sparse binary reward on task completion.
+    # Must match the reward type in the offline dataset (next.reward).
+    reward_shaping: bool = False
     video_key: str = "observation.images.agentview"
     rl_camera: list[str] = field(
         default_factory=lambda: [

@@ -26,6 +26,7 @@ This document explains every aspect of the Residual RL (Reinforcement Learning) 
 16. [Logging and Checkpointing](#16-logging-and-checkpointing)
 17. [File Reference Map](#17-file-reference-map)
 18. [Extra Flags: `headless=false`, `eval_num_envs`, and `--no_cleanup`](#18-extra-flags-headlessfalse-eval_num_envs-and---no_cleanup)
+19. [Reward Flow, Critic Loss Types, and v_min/v_max](#19-reward-flow-critic-loss-types-and-v_minv_max)
 
 **Concept Deep-Dive Documents** (linked inline):
 - [TD3_ALGORITHM.md](TD3_ALGORITHM.md) — Twin Delayed DDPG with math + examples
@@ -1165,6 +1166,115 @@ By default, after BC training completes, the script deletes the local run direct
 Passing `--no_cleanup` skips the deletion so local checkpoints are preserved. This is a safety net — always use it if you want to keep local copies of checkpoints.
 
 > **Note**: This flag only applies to BC training. The RL training script (`train_residual_td3.py`) has its own cache management.
+
+---
+
+## 19. Reward Flow, Critic Loss Types, and v_min/v_max
+
+### Reward Flow: Environment → Buffer → Critic
+
+The reward is **never hardcoded**. It flows directly from the environment through the buffer into the Bellman target:
+
+```
+robosuite env.step()          →  reward (whatever robosuite returns)
+    ↓
+BasePolicyVecEnvWrapper.step() →  passes reward through untouched
+    ↓
+online_rb.add(TensorDict{"next": {"reward": reward[i]}})   # stored as-is
+    ↓
+MultiStepTransform             →  r + γr' + γ²r'' + ...    (n-step sum)
+    ↓
+batch[("next", "reward")]       →  used in Bellman backup
+```
+
+Ref: [train_residual_td3.py](resfit/rl_finetuning/scripts/train_residual_td3.py#L198) stores `reward[i]` directly from `env.step()`. The [q_agent.py](resfit/rl_finetuning/off_policy/rl/q_agent.py#L633) `update()` method reads `reward = batch[("next", "reward")]`.
+
+If you enable dense reward (`reward_shaping=True` in `dexmg.py`), the per-step values (e.g. 0.73) flow through the same path — no code changes needed.
+
+### The Bellman Target Formula
+
+```python
+# q_agent.py lines 334-337
+target_all = self.critic_target.q_value(next_obs["feat"], next_obs["observation.state"], next_action)
+target_q_min = target_all.squeeze(-1)   # min over random 2 of 10 heads → [B]
+target_q = (reward + (discount * target_q_min)).detach()
+```
+
+This is the standard Bellman equation $y = r + \gamma^n Q_{\text{target}}(s', a')$ — works for **any** reward structure.
+
+### The One Sparse-Specific Guard
+
+```python
+# q_agent.py line 338-339
+if self.cfg.clip_q_target_to_reward_range:
+    target_q = torch.clamp(target_q, min=0, max=1)   # hardcoded {0, 1}
+```
+
+This clamps Q-targets to [0, 1]. **Default is `False`** ([rlpd.py](resfit/rl_finetuning/config/rlpd.py#L126)), so it's disabled. If you ever enable it with dense reward, you'd need to change the clamp range or leave it off.
+
+### Three Critic Loss Types
+
+The critic loss type is set by `agent.critic.loss.type` (default `"mse"`):
+
+| Type | `v_min`/`v_max` needed? | Output dim | How it works |
+|---|---|---|---|
+| `"mse"` | **No** | 1 (scalar Q) | Standard MSE: $\|Q(s,a) - y\|^2$ |
+| `"hl_gauss"` | **Yes** | `n_bins` (51) | HL-Gauss distributional: predicts a histogram over value range |
+| `"c51"` | **Yes** | `n_bins` (51) | C51 distributional: predicts categorical distribution over atoms |
+
+### What v_min/v_max Are and Where They're Used
+
+`v_min` and `v_max` define the **range of possible Q-values** that distributional critics can represent. They are only used when `loss.type` is `"hl_gauss"` or `"c51"` — **not used with MSE**.
+
+**Config** ([rlpd.py](resfit/rl_finetuning/config/rlpd.py#L29-L30)):
+```python
+@dataclass
+class CriticLossCfg:
+    type: str = "mse"
+    n_bins: int = 51
+    v_min: float = 0.0
+    v_max: float = 1.0
+```
+
+**HL-Gauss** ([critic.py](resfit/rl_finetuning/off_policy/rl/critic.py#L23-L24)): Creates `n_bins` bins spanning `[v_min, v_max]`. The target Q-value is converted to a soft Gaussian distribution over these bins. The critic predicts logits over bins, and the loss is cross-entropy against the Gaussian target.
+
+```python
+# critic.py — HLGaussLoss.__init__
+bin_edges = torch.linspace(min_value, max_value, num_bins + 1)  # 52 edges → 51 bins
+bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2              # 51 centers
+```
+
+**C51** ([critic.py](resfit/rl_finetuning/off_policy/rl/critic.py#L159-L170)): Creates `n_bins` atoms spanning `[v_min, v_max]`. The critic predicts a probability distribution over these atoms. Q-value = expected value = $\sum p_i \cdot z_i$.
+
+```python
+# critic.py — C51Loss.__init__
+support = torch.linspace(v_min, v_max, num_atoms)   # 51 atoms
+delta_z = (v_max - v_min) / (num_atoms - 1)          # spacing between atoms
+```
+
+During target computation, C51 projects the Bellman-shifted atoms back onto the support and **clamps to [v_min, v_max]** ([critic.py](resfit/rl_finetuning/off_policy/rl/critic.py#L182)):
+```python
+target_support = torch.clamp(target_support, self.v_min, self.v_max)
+```
+
+### How to Set v_min/v_max
+
+| Reward type | v_min | v_max | Reasoning |
+|---|---|---|---|
+| **Sparse** (default, 0/1) | 0.0 | 1.0 | Max return is 1.0 (success at current step) |
+| **Dense** (reward_shaping=True) | 0.0 | 70.0 | Per-step reward ∈ [0, 1.0], γ=0.995, horizon=100 → max ≈ 63.5 |
+
+If `v_max` is too small, the distributional critic **cannot represent** Q-values above it — all probability mass piles up at the boundary. If too large, resolution between bins decreases (same `n_bins` spread over a wider range). The default `v_min=0, v_max=1` is tuned for sparse reward.
+
+### Summary: What to Change for Dense Reward
+
+| What | Change? | Details |
+|---|---|---|
+| `dexmg.py` robosuite.make() | **Yes** | Add `reward_shaping=True` |
+| Bellman formula in q_agent.py | **No** | Already general |
+| `clip_q_target_to_reward_range` | **No** | Already `False` by default |
+| `v_min`/`v_max` | **Only if using hl_gauss/c51** | Set `v_max=70.0` (or higher) |
+| MSE critic loss | **No** | Works with any reward range |
 
 ---
 

@@ -24,6 +24,8 @@ usage() {
     echo "  train_res_rl_lift — Residual RL fine-tuning for robosuite lift task (scripts/train_residual_rl_lift.sh)"
     echo "  bc      — BC policy training (scripts/train_bc_act.sh)"
     echo "  bc_lift — BC policy (ACT) training for robosuite lift task (scripts/train_bc_lift.sh)"
+    echo "  bc_can  — BC policy (ACT) training for robosuite can task (scripts/train_bc_can.sh)"
+    echo '  bc_transport  — BC policy (ACT) training for robosuite transport task (scripts/train_bc_transport.sh)'
     echo "  resume  — Resume RL from checkpoint (scripts/resume_residual_rl.sh)"
     echo ""
     echo "Training runs inside a tmux session named '$SESSION'."
@@ -38,6 +40,8 @@ case "$1" in
     train_res_rl_lift) SCRIPT="scripts/train_residual_rl_lift.sh" ;;
     bc)     SCRIPT="scripts/train_bc_act.sh" ;;
     bc_lift) SCRIPT="scripts/train_bc_lift.sh" ;;
+    bc_can) SCRIPT="scripts/train_bc_can.sh" ;;
+    bc_transport) SCRIPT="scripts/train_bc_transport.sh" ;;
     resume) SCRIPT="scripts/resume_residual_rl.sh" ;;
     *)      usage ;;
 esac

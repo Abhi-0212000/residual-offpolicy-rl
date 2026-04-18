@@ -36,6 +36,7 @@ import multiprocessing as mp
 import os
 import re
 import shutil
+import sys
 import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -45,6 +46,7 @@ from typing import Any
 import imageio
 import numpy as np
 import torch
+from torchvision.transforms import v2 as T
 from lerobot.common.datasets.factory import resolve_delta_timestamps
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from lerobot.common.datasets.transforms import ImageTransforms, ImageTransformsConfig
@@ -152,6 +154,16 @@ parser.add_argument(
 )
 parser.add_argument(
     "--eval_camera_size", type=int, default=84, help="Camera image size for evaluation rollouts (should match dataset)."
+)
+parser.add_argument(
+    "--image_size",
+    type=int,
+    default=None,
+    help=(
+        "Resize training images to this square size (e.g. 84). If not set, images are used at "
+        "their native dataset resolution. When set, eval_camera_size is automatically matched. "
+        "This lets you train on a 256x256 dataset at 84x84 without re-generating the dataset."
+    ),
 )
 parser.add_argument(
     "--eval_render_size",
@@ -553,6 +565,22 @@ def main(cfg: argparse.Namespace):
 
     image_transforms_config = ImageTransformsConfig(enable=True)
     image_transforms = ImageTransforms(image_transforms_config)
+
+    # Optionally prepend a Resize transform so any dataset resolution can be
+    # mapped to a target training resolution (e.g. train at 84×84 on a 256×256
+    # dataset).  The resize runs *before* color jitter augmentation.
+    if cfg.image_size is not None:
+        image_transforms = T.Compose([
+            T.Resize((cfg.image_size, cfg.image_size), antialias=True),
+            image_transforms,
+        ])
+        # Also make eval use the same camera size unless the user overrode it.
+        if "--eval_camera_size" not in sys.argv:
+            cfg.eval_camera_size = cfg.image_size
+        logger.info(
+            f"Resizing training images to {cfg.image_size}×{cfg.image_size}; "
+            f"eval_camera_size={cfg.eval_camera_size}"
+        )
 
     dataset = LeRobotDataset(
         cfg.dataset,

@@ -20,6 +20,10 @@ class OfflineDataConfig:
     # Normalization safeguards
     min_action_range: float = 1e-1  # Minimum range for any action dimension to prevent normalization blow-up
     min_state_std: float = 1e-1  # Minimum std for any state dimension to prevent normalization blow-up
+    # Resize dataset images to this square size (e.g. 84) before storing in
+    # the offline replay buffer.  Set to null/None to use native resolution.
+    # Must match the resolution the BC base policy was trained on.
+    image_size: int | None = None
 
 
 @dataclass

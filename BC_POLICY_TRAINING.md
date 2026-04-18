@@ -178,10 +178,10 @@ output_dir = run_cache_dir
 - If `CACHE_DIR` environment variable is NOT set → `_CACHE_ROOT` = current working directory (`.`)
 - If `CACHE_DIR` is set → that path
 
-So running from `/home/qte9489/personal_abhi/temp/residual-offpolicy-rl/` produces:
+So running from `~/personal_abhi/temp/residual-offpolicy-rl/` produces:
 
 ```
-/home/qte9489/personal_abhi/temp/residual-offpolicy-rl/bc_run_2026-02-18_14-30-00_dexmg-two-arm-coffee_act/
+~/personal_abhi/temp/residual-offpolicy-rl/bc_run_2026-02-18_14-30-00_dexmg-two-arm-coffee_act/
 ```
 
 ### Directory structure

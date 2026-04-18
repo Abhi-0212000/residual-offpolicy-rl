@@ -9,6 +9,15 @@ Script to convert Robomimic HDF5 trajectory data into LeRobot dataset format.
 Usage:
   python convert_robomimic_to_lerobot.py --dataset /path/to/robomimic_dataset.hdf5 \\
     --output_dir /path/to/lerobot_dataset --repo_id [your-hf-account]/dataset-name
+
+~/personal_abhi/Thesis-Docs/Reward_Func/Robomimic/robomimic/datasets/lift/mh/robomimic-mh-lift-image_v15_dense.hdf5
+Dataset name: poolvarine/robomimic-mh-lift-image-dense
+
+python convert_robomimic_to_lerobot.py \
+    --dataset ~/personal_abhi/Thesis-Docs/Reward_Func/Robomimic/robomimic/datasets/lift/mh/robomimic-mh-lift-image_v15_dense.hdf5 \
+    --output_dir ~/personal_abhi/.cache/huggingface/lerobot/poolvarine/robomimic-mh-lift-image-dense \
+    --repo_id poolvarine/robomimic-mh-lift-image-dense
+
 """
 
 from __future__ import annotations
@@ -25,7 +34,7 @@ import numpy as np
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.utils import write_info
 from tqdm import tqdm
-
+from huggingface_hub import DatasetCard
 
 def get_env_metadata_from_dataset(dataset_path: str) -> dict[str, Any]:
     """
@@ -158,6 +167,15 @@ def analyze_dataset_structure(dataset_path: str, demo_keys: list[str]) -> tuple[
             "shape": (1,),
             "names": ["done"],
         }
+
+        # Reward feature (optional — present when HDF5 has rewards)
+        if "rewards" in demo_grp:
+            print("Dataset contains rewards, including 'next.reward' feature.")
+            features["next.reward"] = {
+                "dtype": "float32",
+                "shape": (1,),
+                "names": ["reward"],
+            }
 
         # State observations (concatenate only expected low_dim_keys)
         if state_keys:
@@ -524,6 +542,7 @@ def convert_robomimic_to_lerobot(
 
             # Handle optional data
             dones = demo_grp["dones"][()] if "dones" in demo_grp else None
+            rewards = demo_grp["rewards"][()] if "rewards" in demo_grp else None
 
             obs_grp = demo_grp["obs"]
 
@@ -541,6 +560,12 @@ def convert_robomimic_to_lerobot(
                     "action": np.array(actions[frame_idx], dtype=np.float32).reshape(features["action"]["shape"]),
                     "next.done": np.array([dones[frame_idx]], dtype=bool).reshape(features["next.done"]["shape"]),
                 }
+
+                # Add reward if available in the HDF5
+                if rewards is not None and "next.reward" in features:
+                    frame_data["next.reward"] = np.array(
+                        [rewards[frame_idx]], dtype=np.float32
+                    ).reshape(features["next.reward"]["shape"])
 
                 # Add state observations
                 if "observation.state" in features:

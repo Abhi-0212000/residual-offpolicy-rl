@@ -66,7 +66,7 @@ set -euo pipefail
 # The frozen BC policy that the residual actor corrects on top of.
 # Find this in WandB → your BC training run → copy "project/run_id".
 #
-BASE_WANDB_ID="resfit-robomimic-lift-bc/3pghetmx"
+BASE_WANDB_ID="resfit-robomimic-lift-bc/qolchy68"
 #
 # Which checkpoint to load from that WandB run:
 #   "best"   — highest eval success rate during BC training (recommended)
@@ -154,27 +154,27 @@ ACTION_SCALE=0.1
 MIN_ACTION_RANGE=0.1
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  4. STATE NORMALIZATION                                                 ║
+# ║  4. STATE NORMALIZATION                                                  ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │ HOW STATE NORMALIZATION WORKS                                           │
 # │                                                                         │
-# │ 1. From dataset.meta.stats["observation.state"] → {mean, std} per dim  │
-# │ 2. Clamp std to at least `min_state_std` per dim (prevents blow-up)    │
-# │ 3. At runtime: normalized_state = (state - mean) / std                 │
+# │ 1. From dataset.meta.stats["observation.state"] → {mean, std} per dim   │
+# │ 2. Clamp std to at least `min_state_std` per dim (prevents blow-up)     │
+# │ 3. At runtime: normalized_state = (state - mean) / std                  │
 # │                                                                         │
-# │ For Lift (9D state): eef_pos(3) + eef_quat(4) + gripper_qpos(2)       │
+# │ For Lift (9D state): eef_pos(3) + eef_quat(4) + gripper_qpos(2)         │
 # │                                                                         │
 # │ Both the critic and actor receive standardized states.                  │
-# │ The base_action is normalized to [-1,1] via ActionScaler and passed    │
-# │ as a separate obs key "observation.base_action" to the residual actor. │
+# │ The base_action is normalized to [-1,1] via ActionScaler and passed     │
+# │ as a separate obs key "observation.base_action" to the residual actor.  │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
 MIN_STATE_STD=0.1
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  5. CORE RL HYPERPARAMETERS                                             ║
+# ║  5. CORE RL HYPERPARAMETERS                                              ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
 # Total environment steps to train for.
@@ -303,6 +303,15 @@ CRITIC_WARMUP=10000
 # ║  8. REPLAY BUFFER & OFFLINE DATA                                       ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
+# offline_dataset: HuggingFace dataset ID for the offline demo buffer.
+# This should be the SAME dataset used for BC training.
+# Default (from Hydra config): ankile/robomimic-mh-lift-image (84×84)
+# If you trained BC on a different dataset (e.g. your own 256×256),
+# override it here so RL uses matching demos.
+#
+OFFLINE_DATASET="poolvarine/robomimic-mh-lift-image-dense"
+# OFFLINE_DATASET="ankile/robomimic-mh-lift-image"   # ← ankile's 84×84 original
+#
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │ TWO REPLAY BUFFERS                                                      │
 # │                                                                         │
@@ -429,7 +438,7 @@ POLICY_GRADIENT_TYPE="ensemble_mean"
 #   "c51"       — Categorical distributional RL
 CRITIC_LOSS_TYPE="mse"
 #
-# v_min / v_max: value range for distributional critic (hl_gauss / c51 only)
+# v_min / v_max: value range for distributional critic (hl_gauss / c51 only). Since CRITIC_LOSS_TYPE is "mse" (not distributional), these are not used in this config. If you switch to a distributional loss, set these according to the expected return range:
 # For sparse binary reward with γ=0.995 and horizon=100:
 #   max possible return = γ^0 * 1 = 1.0 (success at last step)
 #   v_min=0.0, v_max=1.0 covers the full range
@@ -446,7 +455,8 @@ CRITIC_LOSS_TYPE="mse"
 #   Also set reward_scale=1.0 in robosuite.make() to keep the [0, 2.25] → [0, 1.0]
 #   normalization (this is already the default).
 V_MIN=0.0
-V_MAX=1.0
+# V_MAX=1.0
+V_MAX=80.0
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  12. EVALUATION                                                        ║
@@ -512,29 +522,66 @@ RL_CAMERA='[observation.images.agentview,observation.images.robot0_eye_in_hand]'
 VIDEO_KEY="observation.images.agentview"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  15. IMAGE RESOLUTION                                                  ║
+# ║  15. REWARD SHAPING                                                    ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+#
+# Controls whether the env returns dense shaped rewards per step or only a
+# sparse binary reward (1.0) on task completion.
+#
+# IMPORTANT: This must be CONSISTENT between the env AND the offline dataset.
+# If your dataset was converted with dense rewards (HDF5 has "rewards" key
+# and you used the updated conversion script), set reward_shaping=true.
+# If your dataset has no rewards (e.g. ankile's pre-built datasets), use false.
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  Sparse (false):                                                        │
+# │    - Env reward: 0 every step, 1.0 on successful lift                  │
+# │    - Offline reward: 0 or 1 (from done flag)                           │
+# │    - Q-value range: [0, 1]                                             │
+# │                                                                         │
+# │  Dense (true):                                                          │
+# │    - Env reward: [0, 0.556] per step (reaching+grasping), 1.0 on lift  │
+# │    - Offline reward: read from dataset's next.reward field              │
+# │    - Q-value range: [0, ~65]                                           │
+# │    - Requires dataset converted with rewards (--shaped flag in HDF5)   │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# REWARD_SHAPING="fase"                 # ← for sparse reward (default, recommended for Lift)
+REWARD_SHAPING="true"                  # ← for dense reward training
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  16. IMAGE RESOLUTION                                                  ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
-# │ Camera images are 84×84 pixels (both training and eval).                │
+# │ Environment images:                                                     │
+# │   Camera images from the simulator are 84×84 pixels.                    │
+# │   Hardcoded default in DexMimicGenEnv / create_vectorized_env.          │
 # │                                                                         │
-# │ This is HARDCODED as the default in DexMimicGenEnv.__init__() and       │
-# │ create_vectorized_env() in resfit/dexmg/environments/dexmg.py.         │
-# │ Unlike BC training (which has --eval_camera_size CLI flag), the RL      │
-# │ script does NOT expose camera_size as a configurable parameter.         │
+# │ Offline dataset images:                                                 │
+# │   If your HuggingFace dataset has a DIFFERENT resolution (e.g. 256×256) │
+# │   set IMAGE_SIZE below to resize them to match the env (84×84).         │
+# │   This must also match the resolution the BC policy was trained on.     │
 # │                                                                         │
-# │ To change it, you must edit dexmg.py directly:                          │
-# │   class DexMimicGenEnv:                                                 │
-# │       def __init__(self, ..., camera_size: int = 84, ...):             │
-# │   def create_vectorized_env(..., camera_size: int = 84, ...):          │
-# │                                                                         │
-# │ IMPORTANT: BC training images (from the dataset) are also 84×84.       │
-# │ The BC policy's vision backbone was trained on 84×84 inputs.            │
-# │ Changing RL camera_size without retraining BC will cause a mismatch.   │
+# │ Why it matters:                                                         │
+# │   - The RL critic's ViT expects 84×84 (PatchEmbed2 num_patch=81)       │
+# │   - Online (env) images are 84×84; offline images must match            │
+# │   - The BC base policy also runs on offline images during buffer fill   │
+# │   - Mismatched resolutions will crash on batch concatenation            │
 # └─────────────────────────────────────────────────────────────────────────┘
+#
+# IMAGE_SIZE: resize dataset images to this square size before storing in
+# the offline replay buffer.  Leave empty to use native dataset resolution.
+# Set to 84 if your dataset is 256×256 but the env/BC use 84×84.
+#
+# IMAGE_SIZE=""
+IMAGE_SIZE=84                           # ← uncomment if dataset is not 84×84
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  16. WANDB                                                             ║
+# ║  16. IMAGE RESOLUTION                                                  ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  17. WANDB                                                             ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 WANDB_PROJECT="robomimic-lift-residual-td3"
 WANDB_NAME=""               # empty = auto-generated name with params + seed
@@ -543,7 +590,7 @@ WANDB_ENTITY=""             # empty = default entity
 WANDB_MODE="online"         # "online", "offline", "disabled"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  17. SEED & DEBUG                                                      ║
+# ║  18. SEED & DEBUG                                                      ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
 # seed: random seed for reproducibility
@@ -560,7 +607,7 @@ TORCH_DETERMINISTIC="false"
 DEBUG="false"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  18. ADVANCED / RARELY CHANGED                                        ║
+# ║  19. ADVANCED / RARELY CHANGED                                        ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
 # num_envs: training environments (must be 1 due to n-step implementation)
@@ -669,6 +716,7 @@ CMD=(
     agent.critic.loss.v_max="${V_MAX}"
 
     # ── Offline data ──
+    offline_data.name="${OFFLINE_DATASET}"
     offline_data.num_episodes="${OFFLINE_EPISODES}"
     offline_data.min_action_range="${MIN_ACTION_RANGE}"
     offline_data.min_state_std="${MIN_STATE_STD}"
@@ -685,6 +733,7 @@ CMD=(
     num_envs="${NUM_ENVS}"
     video_key="${VIDEO_KEY}"
     "rl_camera=${RL_CAMERA}"
+    reward_shaping="${REWARD_SHAPING}"
 
     # ── Checkpointing ──
     save_freq="${SAVE_FREQ}"
@@ -705,6 +754,7 @@ CMD=(
 [[ -n "${WANDB_ENTITY}" ]] && CMD+=(wandb.entity="${WANDB_ENTITY}")
 [[ -n "${SEED}" ]]         && CMD+=(seed="${SEED}")
 [[ -n "${RESUME_CKPT}" ]]  && CMD+=(resume_ckpt="${RESUME_CKPT}")
+[[ -n "${IMAGE_SIZE}" ]]   && CMD+=(offline_data.image_size="${IMAGE_SIZE}")
 
 "${CMD[@]}"
 

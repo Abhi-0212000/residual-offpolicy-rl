@@ -166,152 +166,152 @@ python -c "from torchrl._torchrl import SumSegmentTreeFp32; print('OK')"
 ```sh
 Exception ignored in: <function Image.__del__ at 0x7731f80fb6d0>
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 4056, in __del__
+  File "~/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 4056, in __del__
     self.tk.call('image', 'delete', self.name)
 RuntimeError: main thread is not in main loop
 Exception ignored in: <function Variable.__del__ at 0x7731e8c72830>
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
+  File "~/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
     if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
 RuntimeError: main thread is not in main loop
 Exception ignored in: <function Variable.__del__ at 0x7731e8c72830>
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
+  File "~/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
     if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
 RuntimeError: main thread is not in main loop
 Exception ignored in: <function Variable.__del__ at 0x7731e8c72830>
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
+  File "~/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
     if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
 RuntimeError: main thread is not in main loop
 Exception ignored in: <function Variable.__del__ at 0x7731e8c72830>
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
+  File "~/miniforge3/envs/residual/lib/python3.10/tkinter/__init__.py", line 388, in __del__
     if self._tk.getboolean(self._tk.call("info", "exists", self._name)):
 RuntimeError: main thread is not in main loop
 Tcl_AsyncDelete: async handler deleted by the wrong thread
 Aborted (core dumped)
 (residual) qte9489@cw011081522:~/personal_abhi/temp/residual-offpolicy-rl$ Process Worker<AsyncVectorEnv>-0:
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
     command, data = pipe.recv()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
     buf = self._recv_bytes()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
     buf = self._recv(4)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
     raise EOFError
 EOFError
 
 During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
     self.run()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
     self._target(*self._args, **self._kwargs)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
     pipe.send((None, False))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
     self._send_bytes(_ForkingPickler.dumps(obj))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
     self._send(header + buf)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
     n = write(self._handle, buf)
 BrokenPipeError: [Errno 32] Broken pipe
 Process Worker<AsyncVectorEnv>-1:
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
     command, data = pipe.recv()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
     buf = self._recv_bytes()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
     buf = self._recv(4)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
     raise EOFError
 EOFError
 
 During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
     self.run()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
     self._target(*self._args, **self._kwargs)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
     pipe.send((None, False))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
     self._send_bytes(_ForkingPickler.dumps(obj))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
     self._send(header + buf)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
     n = write(self._handle, buf)
 BrokenPipeError: [Errno 32] Broken pipe
 Process Worker<AsyncVectorEnv>-0:
 Process Worker<AsyncVectorEnv>-2:
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
     command, data = pipe.recv()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
     buf = self._recv_bytes()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
     buf = self._recv(4)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
     raise EOFError
 EOFError
 
 During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
     self.run()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
     self._target(*self._args, **self._kwargs)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
     pipe.send((None, False))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
     self._send_bytes(_ForkingPickler.dumps(obj))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
     self._send(header + buf)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
     n = write(self._handle, buf)
 BrokenPipeError: [Errno 32] Broken pipe
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
     command, data = pipe.recv()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
     buf = self._recv_bytes()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
     buf = self._recv(4)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
     raise EOFError
 EOFError
 
 During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 314, in _bootstrap
     self.run()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/process.py", line 108, in run
     self._target(*self._args, **self._kwargs)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 848, in _async_worker
     pipe.send((None, False))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 206, in send
     self._send_bytes(_ForkingPickler.dumps(obj))
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 411, in _send_bytes
     self._send(header + buf)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 368, in _send
     n = write(self._handle, buf)
 BrokenPipeError: [Errno 32] Broken pipe
 Process Worker<AsyncVectorEnv>-3:
 Traceback (most recent call last):
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
+  File "~/miniforge3/envs/residual/lib/python3.10/site-packages/gymnasium/vector/async_vector_env.py", line 738, in _async_worker
     command, data = pipe.recv()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 250, in recv
     buf = self._recv_bytes()
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 414, in _recv_bytes
     buf = self._recv(4)
-  File "/home/qte9489/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
+  File "~/miniforge3/envs/residual/lib/python3.10/multiprocessing/connection.py", line 383, in _recv
     raise EOFError
 EOFError
 

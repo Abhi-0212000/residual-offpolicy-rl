@@ -91,6 +91,7 @@ class RobosuiteGymWrapper:
         render_size: tuple[int, int] | int | None = None,
         env_id: int = 0,
         headless: bool = True,
+        reward_shaping: bool = False,
     ):
         # ------------------------------------------------------------------
         # Allow common aliases used in the Robomimic literature.
@@ -195,6 +196,7 @@ class RobosuiteGymWrapper:
             "horizon": self.horizon,
             "renderer": "mujoco",
             "render_gpu_device_id": self.render_gpu_device_id,
+            "reward_shaping": reward_shaping,
         }
 
         os.environ["MUJOCO_EGL_DEVICE_ID"] = str(self.render_gpu_device_id)
@@ -563,6 +565,7 @@ def make_dexmimicgen_env(
     render_gpu_device_id: int = 0,
     env_id: int = 0,
     headless: bool = True,
+    reward_shaping: bool = False,
 ):
     """Factory function to create a DexMimicGen environment for vectorization."""
 
@@ -575,6 +578,7 @@ def make_dexmimicgen_env(
             render_size=render_size,
             env_id=env_id,
             headless=headless,
+            reward_shaping=reward_shaping,
         )
 
     return _make
@@ -672,6 +676,7 @@ def create_vectorized_env(
     debug: bool = False,
     video_key: str = "observation.images.agentview",
     headless: bool = True,
+    reward_shaping: bool = False,
 ) -> VectorizedEnvWrapper:
     """Create vectorized environment using Gymnasium's vector environments."""
 
@@ -695,7 +700,7 @@ def create_vectorized_env(
             render_gpu_device_id = visible_device_ids[env_id % num_visible_gpus]
         else:
             render_gpu_device_id = visible_device_ids[0] if visible_device_ids else 0
-        env_fns.append(make_dexmimicgen_env(env_name, camera_size, render_size, render_gpu_device_id, env_id, headless=headless))
+        env_fns.append(make_dexmimicgen_env(env_name, camera_size, render_size, render_gpu_device_id, env_id, headless=headless, reward_shaping=reward_shaping))
 
     if debug or not headless:
         # Use synchronous vectorized environment for debugging or on-screen rendering

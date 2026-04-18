@@ -35,6 +35,7 @@ import torch
 import torchrl
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from omegaconf import OmegaConf
+from torchvision.transforms import v2 as T
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 from torchrl.data import LazyTensorStorage, ReplayBuffer, TensorDictPrioritizedReplayBuffer
@@ -256,7 +257,14 @@ def main(cfg: ResidualTD3DexmgConfig):
 
     # Load dataset and get normalization functions early
     print("Loading dataset and setting up normalization...")
-    dataset = LeRobotDataset(cfg.offline_data.name)
+    offline_image_transforms = None
+    if cfg.offline_data.image_size is not None:
+        offline_image_transforms = T.Resize(
+            (cfg.offline_data.image_size, cfg.offline_data.image_size),
+            antialias=True,
+        )
+        print(f"Resizing offline dataset images to {cfg.offline_data.image_size}×{cfg.offline_data.image_size}")
+    dataset = LeRobotDataset(cfg.offline_data.name, image_transforms=offline_image_transforms)
 
     # Create action scaler from dataset statistics
     action_scaler = ActionScaler.from_dataset_stats(
@@ -294,6 +302,7 @@ def main(cfg: ResidualTD3DexmgConfig):
             video_key=video_key,
             debug=debug,
             headless=cfg.headless,
+            reward_shaping=cfg.reward_shaping,
         )
 
         # Wrap it with the base policy wrapper
@@ -534,6 +543,7 @@ def main(cfg: ResidualTD3DexmgConfig):
         num_episodes: int | None = None,
         use_base_policy_for_base_actions: bool = False,
         base_policy: ACTPolicy | None = None,
+        reward_shaping: bool = False,
     ) -> int:
         """
         Iterates through *dataset* sequentially, converts consecutive frames
@@ -602,6 +612,15 @@ def main(cfg: ResidualTD3DexmgConfig):
             # Convert images to uint8 for memory-efficient storage
             to_uint8(curr_obs, image_keys)
 
+            # Determine the reward for this step.
+            # If the dataset contains dense rewards (next.reward) and
+            # reward_shaping is enabled, use them; otherwise fall back
+            # to the original sparse binary reward (1.0 on done).
+            if reward_shaping and "next.reward" in sample:
+                step_reward = float(sample["next.reward"].item())
+            else:
+                step_reward = float(done_flag)
+
             # ------------------------------------------------------------------
             # If we already cached the *previous* frame for this episode we can
             # create transitions now.
@@ -610,6 +629,7 @@ def main(cfg: ResidualTD3DexmgConfig):
                 # Create transitions for each combination of prev and current variants
                 prev_obs = episode_cache[ep_idx]["obs"]
                 prev_action_scaled = episode_cache[ep_idx]["action"]
+                prev_reward = episode_cache[ep_idx]["reward"]
                 transition = TensorDict(
                     {
                         "obs": TensorDict(prev_obs, batch_size=[]),
@@ -618,7 +638,7 @@ def main(cfg: ResidualTD3DexmgConfig):
                             {
                                 "obs": TensorDict(curr_obs, batch_size=[]),
                                 "done": torch.tensor(done_flag, dtype=torch.bool),
-                                "reward": torch.tensor(float(done_flag), dtype=torch.float32),
+                                "reward": torch.tensor(prev_reward, dtype=torch.float32),
                             },
                             batch_size=[],
                         ),
@@ -638,6 +658,7 @@ def main(cfg: ResidualTD3DexmgConfig):
             episode_cache[ep_idx] = {
                 "obs": curr_obs,
                 "action": gt_action_scaled,
+                "reward": step_reward,
                 "done": done_flag,
                 "step_id": step_id,
             }
@@ -658,6 +679,7 @@ def main(cfg: ResidualTD3DexmgConfig):
         "use_base_policy_for_base_actions": cfg.offline_data.use_base_policy_for_base_actions,
         "min_action_range": cfg.offline_data.min_action_range,
         "min_state_std": cfg.offline_data.min_state_std,
+        "reward_shaping": cfg.reward_shaping,
         "image_keys": image_keys,
         "n_step": cfg.algo.n_step,
         "gamma": cfg.algo.gamma,
@@ -710,6 +732,7 @@ def main(cfg: ResidualTD3DexmgConfig):
                 num_episodes=cfg.offline_data.num_episodes,
                 use_base_policy_for_base_actions=cfg.offline_data.use_base_policy_for_base_actions,
                 base_policy=base_policy if cfg.offline_data.use_base_policy_for_base_actions else None,
+                reward_shaping=cfg.reward_shaping,
             )
 
             print(f"Added {added} offline transitions to buffer (size={len(offline_rb)})")
