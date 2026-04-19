@@ -100,7 +100,7 @@ BASE_WT_VERSION="latest"
 #   residual_td3_two_arm_cansort_config — TwoArmCanSort (bimanual)
 #   residual_td3_dexmg_config        — Base config (must override task=)
 #
-CONFIG_NAME="residual_td3_cube_lift_config"
+CONFIG_NAME="residual_td3_can_config"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  3. ACTION NORMALIZATION                                                ║
