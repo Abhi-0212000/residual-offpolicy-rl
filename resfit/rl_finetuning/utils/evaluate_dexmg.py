@@ -155,6 +155,8 @@ def run_dexmg_evaluation(
     successes: list[bool] = []  # episode-level success flags
     returns: list[float] = []  # episode-level undiscounted returns
     ep_ever_succeeded: list[bool] = [False] * num_envs  # track success across episode
+    ep_first_success_step: list[int | None] = [None] * num_envs  # 1-indexed first success step per episode
+    first_success_steps: list[int | None] = []  # episode-level first success step
 
     # Q-trajectory data for plotting ------------------------------------
     all_q_trajectories: list[list[float]] = []  # Store Q-trajectories for all episodes
@@ -212,6 +214,8 @@ def run_dexmg_evaluation(
             # Track if task succeeded at any point during this episode
             if reward[env_idx].item() == 1.0:
                 ep_ever_succeeded[env_idx] = True
+                if ep_first_success_step[env_idx] is None:
+                    ep_first_success_step[env_idx] = len(ep_rewards[env_idx])
 
             if done_flags[env_idx]:
                 # Episode finished -- aggregate results ----------------
@@ -224,6 +228,7 @@ def run_dexmg_evaluation(
 
                 successes.append(is_success)
                 returns.append(ep_return)
+                first_success_steps.append(ep_first_success_step[env_idx])
 
                 # Store Q-trajectory data for plotting ------------------
                 if save_q_plots:
@@ -258,6 +263,7 @@ def run_dexmg_evaluation(
                 ep_rewards[env_idx].clear()
                 ep_q_preds[env_idx].clear()
                 ep_ever_succeeded[env_idx] = False
+                ep_first_success_step[env_idx] = None
 
                 done_episodes += 1
 
@@ -277,6 +283,10 @@ def run_dexmg_evaluation(
         raise RuntimeError(
             f"Episode length/success misalignment: lengths={len(all_episode_lengths)} successes={len(successes)}"
         )
+    if len(first_success_steps) != len(successes):
+        raise RuntimeError(
+            f"First-success/success misalignment: first_success={len(first_success_steps)} successes={len(successes)}"
+        )
 
     success_rate: float = float(np.mean(successes)) if successes else 0.0
     mean_return: float = float(np.mean(returns)) if returns else 0.0
@@ -287,10 +297,21 @@ def run_dexmg_evaluation(
         float(np.mean(successful_episode_lengths)) if successful_episode_lengths else 0.0
     )
 
+    # New metric: mean first-success step among successful episodes
+    # This stays informative even when reward_shaping keeps episodes running
+    # until horizon (where episode length is no longer a speed proxy).
+    successful_first_success_steps = [
+        step for step, is_success in zip(first_success_steps, successes) if is_success and step is not None
+    ]
+    mean_first_success_step: float = (
+        float(np.mean(successful_first_success_steps)) if successful_first_success_steps else 0.0
+    )
+
     metrics: dict[str, float] = {
         "eval/success_rate": success_rate,
         "eval/mean_return": mean_return,
         "eval/mean_successful_episode_length": mean_successful_episode_length,
+        "eval/mean_first_success_step": mean_first_success_step,
     }
 
     if wandb.run is not None:
