@@ -24,6 +24,7 @@ usage() {
     echo "  train_res_rl_lift — Residual RL fine-tuning for robosuite lift task (scripts/train_residual_rl_lift.sh)"
     echo "  train_res_rl_can  — Residual RL fine-tuning for robosuite can task (scripts/train_residual_rl_can.sh)"
     echo "  train_res_rl_can_sparse  — Residual RL fine-tuning for robosuite can task with sparse rewards (scripts/train_residual_rl_can_sparse.sh)"
+    echo "  train_res_rl_can_sparse_paper_run  — Paper run: sparse Can residual RL with hardcoded params (scripts/train_residual_rl_can_sparse_paper_run.sh)"
     echo "  bc      — BC policy training (scripts/train_bc_act.sh)"
     echo "  bc_lift — BC policy (ACT) training for robosuite lift task (scripts/train_bc_lift.sh)"
     echo "  bc_can  — BC policy (ACT) training for robosuite can task (scripts/train_bc_can.sh)"
@@ -42,6 +43,7 @@ case "$1" in
     train_res_rl_lift) SCRIPT="scripts/train_residual_rl_lift.sh" ;;
     train_res_rl_can) SCRIPT="scripts/train_residual_rl_can.sh" ;;
     train_res_rl_can_sparse) SCRIPT="scripts/train_residual_rl_can_sparse.sh" ;;
+    train_res_rl_can_sparse_paper_run) SCRIPT="scripts/train_residual_rl_can_sparse_paper_run.sh" ;;
     bc)     SCRIPT="scripts/train_bc_act.sh" ;;
     bc_lift) SCRIPT="scripts/train_bc_lift.sh" ;;
     bc_can) SCRIPT="scripts/train_bc_can.sh" ;;
