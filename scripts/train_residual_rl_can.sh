@@ -310,8 +310,8 @@ CRITIC_WARMUP=10000
 # If you trained BC on a different dataset (e.g. your own 256×256),
 # override it here so RL uses matching demos.
 #
-OFFLINE_DATASET="poolvarine/robomimic-mh-cube-image-dense"
-# OFFLINE_DATASET="ankile/robomimic-mh-lift-image"   # ← ankile's 84×84 original
+OFFLINE_DATASET="poolvarine/robomimic-mh-can-image-dense"
+# OFFLINE_DATASET="ankile/robomimic-mh-can-image"   # ← ankile's 84×84 original
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │ TWO REPLAY BUFFERS                                                      │
