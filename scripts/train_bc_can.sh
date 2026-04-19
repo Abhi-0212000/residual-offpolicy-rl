@@ -47,7 +47,7 @@ set -euo pipefail
 # To use a local dataset instead of HuggingFace, set DATASET to the local path:
 #   DATASET="/path/to/my-local-lerobot-dataset"
 #
-DATASET="ankile/robomimic-mh-can-image"
+DATASET="poolvarine/robomimic-mh-can-image-dense"
 
 # ── Episode Count ────────────────────────────────────────────────────────────
 # BC uses ALL episodes in the dataset for training (all 300 in this case).
@@ -213,6 +213,21 @@ EVAL_VIDEO_KEY="observation.images.agentview"   # Camera for recorded eval video
 EVAL_RENDER_SIZE=224                      # High-res video recording (pixels)
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  IMAGE RESIZE                                                           ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+#
+# Resize training images to this square size (e.g. 84).
+# Use when your dataset has a different resolution than you want to train at.
+# Example: dataset is 256×256 but you want to train at 84×84.
+# Leave empty ("") to use the native dataset resolution.
+#
+# When set, eval_camera_size is automatically matched unless you override it.
+# And make sure the EVAL_CAMERA_SIZE matches the IMAGE_SIZE to avoid resolution mismatch during eval rollouts.
+#
+# IMAGE_SIZE=""
+IMAGE_SIZE=84                           # ← uncomment to resize to 84×84
+
+# ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  WANDB LOGGING                                                          ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
@@ -279,6 +294,7 @@ CMD=(
 [[ -n "${POLICY_KWARGS}" ]]     && CMD+=(--policy_kwargs "${POLICY_KWARGS}")
 [[ -n "${DISABLE_PROPRIO}" ]]   && CMD+=("${DISABLE_PROPRIO}")
 [[ -n "${POLICY_CAMERAS}" ]]    && CMD+=(--policy_cameras ${POLICY_CAMERAS})
+[[ -n "${IMAGE_SIZE}" ]]        && CMD+=(--image_size "${IMAGE_SIZE}")
 
 # Execute
 "${CMD[@]}"
