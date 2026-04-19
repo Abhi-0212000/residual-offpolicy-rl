@@ -52,7 +52,7 @@ export HF_HUB_DOWNLOAD_TIMEOUT=120
 # To use a local dataset instead of HuggingFace, set DATASET to the local path:
 #   DATASET="/path/to/my-local-lerobot-dataset"
 #
-DATASET="ankile/robomimic-mh-transport-image"
+DATASET="poolvarine/robomimic-mh-transport-image-dense"
 
 # ── Episode Count ────────────────────────────────────────────────────────────
 # BC uses ALL episodes in the dataset for training (all 300 in this case).
@@ -223,10 +223,14 @@ EVAL_RENDER_SIZE=224                      # High-res video recording (pixels)
 #
 # Resize training images to this square size (e.g. 84).
 # Use when your dataset has a different resolution than you want to train at.
+# Example: dataset is 256×256 but you want to train at 84×84.
 # Leave empty ("") to use the native dataset resolution.
 #
-IMAGE_SIZE=""
-# IMAGE_SIZE=84                           # ← uncomment to resize to 84×84
+# When set, eval_camera_size is automatically matched unless you override it.
+# And make sure the EVAL_CAMERA_SIZE matches the IMAGE_SIZE to avoid resolution mismatch during eval rollouts.
+#
+# IMAGE_SIZE=""
+IMAGE_SIZE=84                           # ← uncomment to resize to 84×84
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  WANDB LOGGING                                                          ║
