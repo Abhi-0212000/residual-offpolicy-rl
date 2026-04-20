@@ -85,6 +85,15 @@ parser.add_argument(
     "--dataset", type=str, required=True, help="HF Hub dataset repo-id e.g. `ankile/franka-lift-dataset`"
 )
 parser.add_argument(
+    "--dataset_revision",
+    type=str,
+    default=None,
+    help=(
+        "Optional dataset revision to use (branch/tag/commit), e.g. 'main' or 'v2.1'. "
+        "If unset, defaults to LeRobot codebase version matching behavior."
+    ),
+)
+parser.add_argument(
     "--policy",
     type=str,
     default="diffusion",
@@ -449,7 +458,7 @@ def main(cfg: argparse.Namespace):
     # Dataset (metadata first, then actual dataset with resolved timestamps)
     # ---------------------------------------------------------------------
     logger.info("Fetching dataset metadata from the Hub…")
-    ds_meta = LeRobotDatasetMetadata(cfg.dataset)
+    ds_meta = LeRobotDatasetMetadata(cfg.dataset, revision=cfg.dataset_revision)
 
     # ---------------------------------------------------------------------
     # Build the policy configuration, applying any CLI-specified overrides
@@ -585,6 +594,7 @@ def main(cfg: argparse.Namespace):
     dataset = LeRobotDataset(
         cfg.dataset,
         delta_timestamps=delta_timestamps,
+        revision=cfg.dataset_revision,
         download_videos=True,
         image_transforms=image_transforms,
     )

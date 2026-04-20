@@ -54,6 +54,10 @@ export HF_HUB_DOWNLOAD_TIMEOUT=120
 #
 DATASET="poolvarine/robomimic-mh-transport-image-dense"
 
+# Optional HF revision override for datasets that only have branch refs (e.g. "main")
+# instead of version tags (e.g. "v2.1"). Leave empty to use default LeRobot behavior.
+DATASET_REVISION="main"
+
 # ── Episode Count ────────────────────────────────────────────────────────────
 # BC uses ALL episodes in the dataset for training (all 300 in this case).
 # There is no --max_episodes flag in train_bc_dexmg.py.
@@ -300,6 +304,7 @@ CMD=(
 [[ -n "${DISABLE_PROPRIO}" ]]   && CMD+=("${DISABLE_PROPRIO}")
 [[ -n "${POLICY_CAMERAS}" ]]    && CMD+=(--policy_cameras ${POLICY_CAMERAS})
 [[ -n "${IMAGE_SIZE}" ]]        && CMD+=(--image_size "${IMAGE_SIZE}")
+[[ -n "${DATASET_REVISION}" ]]  && CMD+=(--dataset_revision "${DATASET_REVISION}")
 
 # Execute
 "${CMD[@]}"
