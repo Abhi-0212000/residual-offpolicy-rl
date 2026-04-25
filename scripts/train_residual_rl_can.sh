@@ -244,7 +244,7 @@ UTD=4
 #
 STDDEV_MAX=0.025
 STDDEV_MIN=0.025
-STDDEV_STEP=300000
+STDDEV_STEP=200000
 #
 # stddev_clip: hard clip on the TruncatedNormal distribution.
 # Actions are clipped to [mean - stddev_clip, mean + stddev_clip].
