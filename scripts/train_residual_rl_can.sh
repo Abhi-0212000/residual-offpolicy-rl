@@ -66,7 +66,7 @@ set -euo pipefail
 # The frozen BC policy that the residual actor corrects on top of.
 # Find this in WandB → your BC training run → copy "project/run_id".
 #
-BASE_WANDB_ID="/resfit-robomimic-can-bc/pzqj1tmd"
+BASE_WANDB_ID="resfit-robomimic-can-bc/pzqj1tmd"
 #
 # Which checkpoint to load from that WandB run:
 #   "best"   — highest eval success rate during BC training (recommended)
