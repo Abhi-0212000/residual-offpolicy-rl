@@ -47,7 +47,7 @@ set -euo pipefail
 # To use a local dataset instead of HuggingFace, set DATASET to the local path:
 #   DATASET="/path/to/my-local-lerobot-dataset"
 #
-DATASET="ankile/robomimic-mh-lift-image"
+DATASET="poolvarine/robomimic-mh-lift-image-dense"
 
 # ── Episode Count ────────────────────────────────────────────────────────────
 # BC uses ALL episodes in the dataset for training (all 300 in this case).
@@ -183,7 +183,7 @@ POLICY_KWARGS=""
 STEPS=100000                              # Total optimization steps
                                           # Lift is simpler than Coffee — 100K usually suffices
                                           # 50K for quick tests, 200K for thorough training
-BATCH_SIZE=128                            # Batch size. 128 fits 16GB GPU, 256 on 48GB
+BATCH_SIZE=256                            # Batch size. 128 fits 16GB GPU, 256 on 48GB
 GRAD_CLIP_NORM=10.0                       # Gradient clipping norm (default 10.0)
 NUM_WORKERS=4                             # Dataloader workers (4 is good default)
 SEED=""                                   # Random seed. "" = random, or set e.g. SEED="42"
@@ -248,9 +248,9 @@ RESUME_RUN_ID=""                          # WandB run ID to resume (grabs 'lates
 # ║  CLEANUP                                                                ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 
-NO_CLEANUP="--no_cleanup"                 # Keep all checkpoint files after training
+# NO_CLEANUP="--no_cleanup"                 # Keep all checkpoint files after training
                                           # Remove this flag to auto-delete intermediate checkpoints
-# NO_CLEANUP=""                           # ← uncomment to auto-cleanup
+NO_CLEANUP=""                           # ← uncomment to auto-cleanup
 
 # ============================================================================
 # Build command
