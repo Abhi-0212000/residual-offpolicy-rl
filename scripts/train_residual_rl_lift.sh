@@ -66,14 +66,14 @@ set -euo pipefail
 # The frozen BC policy that the residual actor corrects on top of.
 # Find this in WandB → your BC training run → copy "project/run_id".
 #
-BASE_WANDB_ID="resfit-robomimic-lift-bc/qolchy68"
+BASE_WANDB_ID="resfit-robomimic-lift-bc/5ewq2l98"
 #
 # Which checkpoint to load from that WandB run:
 #   "best"   — highest eval success rate during BC training (recommended)
 #   "latest" — last saved checkpoint
 #   "final"  — end of training
 #
-BASE_WT_TYPE="latest"
+BASE_WT_TYPE="best"
 #
 # Which version of the WandB artifact to use:
 #   "latest" — most recent upload (default)
@@ -180,7 +180,7 @@ MIN_STATE_STD=0.1
 # Total environment steps to train for.
 # Lift horizon=100, so 300K steps ≈ 3000 episodes of interaction.
 # 300K is the default. 500K for thorough training. 100K for quick tests.
-TOTAL_TIMESTEPS=100000
+TOTAL_TIMESTEPS=300000
 
 # N-step returns — how many steps of actual reward to use before bootstrapping.
 # With sparse reward (only r=1 at success), higher N helps propagate reward signal.
@@ -498,7 +498,7 @@ SAVE_FREQ=5000
 # no_cleanup: keep all local checkpoints after training finishes
 # true  = keep everything (useful if WandB upload might fail)
 # false = auto-clean old checkpoints to save disk
-NO_CLEANUP="true"
+NO_CLEANUP="false"
 #
 # resume_ckpt: path to a checkpoint.pt to resume training from
 # Leave empty for fresh training. Set to a path to resume.

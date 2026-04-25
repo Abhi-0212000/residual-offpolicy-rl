@@ -18,6 +18,11 @@ python convert_robomimic_to_lerobot.py \
     --output_dir ~/personal_abhi/.cache/huggingface/lerobot/poolvarine/robomimic-mh-lift-image-dense \
     --repo_id poolvarine/robomimic-mh-lift-image-dense
 
+python convert_robomimic_to_lerobot_fast.py \
+  --dataset ~/personal_abhi/Thesis-Docs/Reward_Func/Robomimic/robomimic/datasets/square/mh/robomimic-mh-square-image_v15_dense.hdf5 \
+  --output_dir ~/.cache/huggingface/lerobot/poolvarine/robomimic-mh-square-image-dense \
+  --repo_id poolvarine/robomimic-mh-square-image-dense
+
 """
 
 from __future__ import annotations
@@ -347,7 +352,17 @@ def get_action_names(env_name: str, action_dim: int) -> list[str]:
     is_humanoid = any(task in env_lower for task in ["pouring", "coffee", "cansort", "can_sort"])
 
     # Check if this is a single-arm environment
-    single_arm_tasks = ["lift", "can", "pickplacecan", "square", "nutassemblysquare", "threading"]
+    # Include both underscored and compact variants to handle values like "ToolHang".
+    single_arm_tasks = [
+        "lift",
+        "can",
+        "pickplacecan",
+        "square",
+        "nutassemblysquare",
+        "threading",
+        "tool_hang",
+        "toolhang",
+    ]
     is_single_arm = any(task in env_lower for task in single_arm_tasks)
 
     if is_dexterous and action_dim == 24:

@@ -66,15 +66,14 @@ set -euo pipefail
 # The frozen BC policy that the residual actor corrects on top of.
 # Find this in WandB → your BC training run → copy "project/run_id".
 #
-BASE_WANDB_ID="/resfit-robomimic-can-bc/pzqj1tmd"
+BASE_WANDB_ID="resfit-robomimic-lift-bc/5ewq2l98"
 #
 # Which checkpoint to load from that WandB run:
 #   "best"   — highest eval success rate during BC training (recommended)
 #   "latest" — last saved checkpoint
 #   "final"  — end of training
-#   "policy_step" — specific checkpoint at step N (e.g. 25000)
 #
-BASE_WT_TYPE="latest"   # ← step number of the checkpoint to load (recommended: best checkpoint from BC training)
+BASE_WT_TYPE="best"
 #
 # Which version of the WandB artifact to use:
 #   "latest" — most recent upload (default)
@@ -100,7 +99,7 @@ BASE_WT_VERSION="latest"
 #   residual_td3_two_arm_cansort_config — TwoArmCanSort (bimanual)
 #   residual_td3_dexmg_config        — Base config (must override task=)
 #
-CONFIG_NAME="residual_td3_can_config"
+CONFIG_NAME="residual_td3_cube_lift_config"
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  3. ACTION NORMALIZATION                                                ║
@@ -146,7 +145,7 @@ CONFIG_NAME="residual_td3_can_config"
 #   0.2  = more freedom for harder tasks
 #   0.3  = aggressive, risk of destabilizing the base policy
 #
-ACTION_SCALE=0.2
+ACTION_SCALE=0.1
 #
 # min_action_range: minimum range per action dimension (prevents div-by-zero
 # if some dimension has near-zero variance in the dataset).
@@ -242,8 +241,8 @@ UTD=4
 #   action_scale=0.1, stddev=0.025 → noise is ~25% of the residual range
 #   action_scale=0.2, stddev=0.05 → noise is ~25% of the residual range
 #
-STDDEV_MAX=0.025
-STDDEV_MIN=0.025
+STDDEV_MAX=0.05
+STDDEV_MIN=0.05
 STDDEV_STEP=300000
 #
 # stddev_clip: hard clip on the TruncatedNormal distribution.
@@ -310,8 +309,8 @@ CRITIC_WARMUP=10000
 # If you trained BC on a different dataset (e.g. your own 256×256),
 # override it here so RL uses matching demos.
 #
-OFFLINE_DATASET="poolvarine/robomimic-mh-can-image-dense"
-# OFFLINE_DATASET="ankile/robomimic-mh-can-image"   # ← ankile's 84×84 original
+OFFLINE_DATASET="poolvarine/robomimic-mh-lift-image-sparse"
+# OFFLINE_DATASET="ankile/robomimic-mh-lift-image"   # ← ankile's 84×84 original
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │ TWO REPLAY BUFFERS                                                      │
@@ -358,7 +357,7 @@ SAMPLING="uniform"
 #   50  = recommended by task-specific config (small but sufficient for Lift)
 #   100 = more demo data for stabler training
 #   300 = all available (slower loading, more conservative training)
-OFFLINE_EPISODES=100
+OFFLINE_EPISODES=50
 #
 # offline_fraction: what fraction of each training batch comes from offline data
 #   0.5 = half offline, half online (standard RLPD)
@@ -547,8 +546,8 @@ VIDEO_KEY="observation.images.agentview"
 # │    - Requires dataset converted with rewards (--shaped flag in HDF5)   │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
-# REWARD_SHAPING="fase"                 # ← for sparse reward (default, recommended for Lift)
-REWARD_SHAPING="true"                  # ← for dense reward training
+# REWARD_SHAPING="false"                 # ← for sparse reward (default, recommended for Lift)
+REWARD_SHAPING="false"                  # ← for sparse reward training
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  16. IMAGE RESOLUTION                                                  ║
@@ -584,7 +583,7 @@ IMAGE_SIZE=84                           # ← uncomment if dataset is not 84×84
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  17. WANDB                                                             ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
-WANDB_PROJECT="robomimic-can-residual-td3"
+WANDB_PROJECT="robomimic-lift-residual-td3"
 WANDB_NAME=""               # empty = auto-generated name with params + seed
 WANDB_GROUP=""
 WANDB_ENTITY=""             # empty = default entity
