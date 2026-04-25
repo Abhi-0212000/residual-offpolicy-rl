@@ -46,56 +46,65 @@ Top 10 longest episodes: [(259, 313), (241, 303), (79, 269), (236, 234), (99, 21
 """
 
 
+# import inspect
+# from robosuite.environments.manipulation.pick_place import PickPlaceCan, PickPlace
+
+
+# def print_can_reward_numeric_summary(reward_scale: float = 1.0, single_object_mode: int = 2) -> None:
+# 		"""Print practical reward range summary for robosuite PickPlaceCan.
+
+# 		single_object_mode:
+# 			0 -> all objects
+# 			1/2 -> single object task (Can task commonly uses this)
+# 		"""
+# 		# From PickPlace.staged_rewards()
+# 		reach_max = 0.1
+# 		grasp_max = 0.35
+# 		lift_max = 0.5
+# 		hover_max = 0.7
+
+# 		# Dense shaping uses max(staged_rewards), so pre-success shaped max is hover_max.
+# 		shaped_pre_success_raw_max = hover_max
+
+# 		# Sparse success term from reward(): reward = sum(objects_in_bins)
+# 		# For single-object mode this is at most 1. For mode=0 there are 4 objects.
+# 		sparse_success_raw_max = 4.0 if single_object_mode == 0 else 1.0
+
+# 		# In mode=0, reward() divides by 4 after scaling.
+# 		denom = 4.0 if single_object_mode == 0 else 1.0
+
+# 		shaped_pre_success_scaled_max = shaped_pre_success_raw_max * reward_scale / denom
+# 		sparse_success_scaled = sparse_success_raw_max * reward_scale / denom
+
+# 		# Naive upper bound if success and shaping were added simultaneously.
+# 		# In practice success usually dominates and shaping is effectively not the driver.
+# 		combined_naive_upper_raw = sparse_success_raw_max + shaped_pre_success_raw_max
+# 		combined_naive_upper_scaled = combined_naive_upper_raw * reward_scale / denom
+
+# 		print("\n=== PickPlaceCan numeric reward summary ===")
+# 		print(f"reward_scale={reward_scale}, single_object_mode={single_object_mode}")
+# 		print(f"staged component maxima (raw): reach={reach_max}, grasp={grasp_max}, lift={lift_max}, hover={hover_max}")
+# 		print(f"max pre-success shaped reward (scaled): {shaped_pre_success_scaled_max:.3f}")
+# 		print(f"success reward term (scaled): {sparse_success_scaled:.3f}")
+# 		print(f"naive combined upper bound success+shaping (scaled): {combined_naive_upper_scaled:.3f}")
+# 		print("For Can single-object runs, success reward is typically 1.0 when placed correctly.")
+
+# print("=== PickPlaceCan.reward ===")
+# print(inspect.getsource(PickPlaceCan.reward))
+
+# print("\n=== PickPlace.staged_rewards ===")
+# print(inspect.getsource(PickPlace.staged_rewards))
+
+# print("\n=== PickPlace._check_success ===")
+# print(inspect.getsource(PickPlace._check_success))
+
+# print_can_reward_numeric_summary(reward_scale=1.0, single_object_mode=2)
+
+
 import inspect
-from robosuite.environments.manipulation.pick_place import PickPlaceCan, PickPlace
+from robosuite.environments.manipulation import Lift
 
+reward_run = inspect.getsource(Lift.reward)
 
-def print_can_reward_numeric_summary(reward_scale: float = 1.0, single_object_mode: int = 2) -> None:
-		"""Print practical reward range summary for robosuite PickPlaceCan.
-
-		single_object_mode:
-			0 -> all objects
-			1/2 -> single object task (Can task commonly uses this)
-		"""
-		# From PickPlace.staged_rewards()
-		reach_max = 0.1
-		grasp_max = 0.35
-		lift_max = 0.5
-		hover_max = 0.7
-
-		# Dense shaping uses max(staged_rewards), so pre-success shaped max is hover_max.
-		shaped_pre_success_raw_max = hover_max
-
-		# Sparse success term from reward(): reward = sum(objects_in_bins)
-		# For single-object mode this is at most 1. For mode=0 there are 4 objects.
-		sparse_success_raw_max = 4.0 if single_object_mode == 0 else 1.0
-
-		# In mode=0, reward() divides by 4 after scaling.
-		denom = 4.0 if single_object_mode == 0 else 1.0
-
-		shaped_pre_success_scaled_max = shaped_pre_success_raw_max * reward_scale / denom
-		sparse_success_scaled = sparse_success_raw_max * reward_scale / denom
-
-		# Naive upper bound if success and shaping were added simultaneously.
-		# In practice success usually dominates and shaping is effectively not the driver.
-		combined_naive_upper_raw = sparse_success_raw_max + shaped_pre_success_raw_max
-		combined_naive_upper_scaled = combined_naive_upper_raw * reward_scale / denom
-
-		print("\n=== PickPlaceCan numeric reward summary ===")
-		print(f"reward_scale={reward_scale}, single_object_mode={single_object_mode}")
-		print(f"staged component maxima (raw): reach={reach_max}, grasp={grasp_max}, lift={lift_max}, hover={hover_max}")
-		print(f"max pre-success shaped reward (scaled): {shaped_pre_success_scaled_max:.3f}")
-		print(f"success reward term (scaled): {sparse_success_scaled:.3f}")
-		print(f"naive combined upper bound success+shaping (scaled): {combined_naive_upper_scaled:.3f}")
-		print("For Can single-object runs, success reward is typically 1.0 when placed correctly.")
-
-print("=== PickPlaceCan.reward ===")
-print(inspect.getsource(PickPlaceCan.reward))
-
-print("\n=== PickPlace.staged_rewards ===")
-print(inspect.getsource(PickPlace.staged_rewards))
-
-print("\n=== PickPlace._check_success ===")
-print(inspect.getsource(PickPlace._check_success))
-
-print_can_reward_numeric_summary(reward_scale=1.0, single_object_mode=2)
+print("=== Lift.reward ===")
+print(reward_run)

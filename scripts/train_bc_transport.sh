@@ -265,7 +265,7 @@ NO_CLEANUP=""                           # ← uncomment to auto-cleanup
 # Build command
 # ============================================================================
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  BC Policy Training — ACT on Lift (Franka Panda)            "
+echo "║  BC Policy Training — ACT on Transport (Two Arm)            "
 echo "║  Dataset: ${DATASET}                                        "
 echo "║  Steps: ${STEPS}  |  Batch: ${BATCH_SIZE}  |  Eval envs: ${EVAL_NUM_ENVS}"
 echo "║  Cameras: ${POLICY_CAMERAS:-all in dataset}                 "
@@ -311,7 +311,7 @@ CMD=(
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo "✓ BC training on Lift complete."
+echo "✓ BC training on Transport complete."
 echo "  Check WandB for the run ID: ${WANDB_PROJECT}"
 echo "  Use for residual RL: base_policy.wandb_id=${WANDB_PROJECT}/<run_id>"
 echo "════════════════════════════════════════════════════════════════"

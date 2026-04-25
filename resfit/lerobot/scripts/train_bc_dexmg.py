@@ -309,7 +309,7 @@ def _run_rollouts(
 ):
     """Run *num_episodes* episodes with *policy* in vectorized *env* and compute success-rate.
 
-    Captures a video, writes it to *save_dir*/`eval_step_<step>.mp4`, and returns `(success_rate, video_path)`.
+    Captures a video, writes it to *save_dir*/`eval_step_<step>.mp4`, and returns aggregate rollout data.
     """
 
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -324,6 +324,8 @@ def _run_rollouts(
     successes = 0
     done_episodes = 0
     total_steps = 0
+    episode_lengths: list[int] = []
+    episode_successes: list[bool] = []
 
     start_time = time.perf_counter()
 
@@ -381,6 +383,8 @@ def _run_rollouts(
                 is_success = env_idx in success_envs
                 done_episodes += 1
                 successes += int(is_success)
+                episode_lengths.append(episode_steps[env_idx_int])
+                episode_successes.append(bool(is_success))
 
                 # Annotate each frame in this episode and write to video
                 for step_idx, frame in enumerate(episode_frames[env_idx_int]):
@@ -427,7 +431,74 @@ def _run_rollouts(
     )
     logger.info(f"Video saved with annotated frames: {video_path}")
 
-    return success_rate, video_path, final_fps
+    mean_episode_length = float(np.mean(episode_lengths)) if episode_lengths else 0.0
+    successful_episode_lengths = [
+        length for length, is_success in zip(episode_lengths, episode_successes) if is_success
+    ]
+    mean_successful_episode_length = (
+        float(np.mean(successful_episode_lengths)) if successful_episode_lengths else 0.0
+    )
+
+    return {
+        "success_rate": success_rate,
+        "video_path": video_path,
+        "final_fps": final_fps,
+        "episode_lengths": episode_lengths,
+        "episode_successes": episode_successes,
+        "mean_episode_length": mean_episode_length,
+        "mean_successful_episode_length": mean_successful_episode_length,
+    }
+
+
+def _build_eval_episode_length_log(
+    *,
+    episode_lengths: list[int],
+    successes: list[bool],
+    horizon: int | None = None,
+) -> dict[str, Any]:
+    if not episode_lengths:
+        return {}
+
+    plot_title = "BC evaluation episode lengths"
+    successful_plot_title = "BC successful evaluation episode lengths"
+    if horizon is not None:
+        plot_title = f"{plot_title} (horizon={horizon})"
+        successful_plot_title = f"{successful_plot_title} (horizon={horizon})"
+
+    rows = [[episode_idx, int(episode_length)] for episode_idx, episode_length in enumerate(episode_lengths, start=1)]
+    log_payload = {
+        "eval/episode_lengths": wandb.plot.line(
+            wandb.Table(data=rows, columns=["episode", "episode_length"]),
+            "episode",
+            "episode_length",
+            title=plot_title,
+        ),
+        "eval/max_episode_length": float(np.max(episode_lengths)),
+        "eval/min_episode_length": float(np.min(episode_lengths)),
+    }
+
+    successful_episode_lengths = [
+        int(episode_length) for episode_length, is_success in zip(episode_lengths, successes) if is_success
+    ]
+    if successful_episode_lengths:
+        successful_rows = [
+            [episode_idx, episode_length]
+            for episode_idx, episode_length in enumerate(successful_episode_lengths, start=1)
+        ]
+        log_payload.update(
+            {
+                "eval/successful_episode_lengths": wandb.plot.line(
+                    wandb.Table(data=successful_rows, columns=["successful_episode", "episode_length"]),
+                    "successful_episode",
+                    "episode_length",
+                    title=successful_plot_title,
+                ),
+                "eval/max_successful_episode_length": float(np.max(successful_episode_lengths)),
+                "eval/min_successful_episode_length": float(np.min(successful_episode_lengths)),
+            }
+        )
+
+    return log_payload
 
 
 # -----------------------------------------------------------------------------
@@ -876,7 +947,7 @@ def main(cfg: argparse.Namespace):
         ):
             rollout_t0 = time.perf_counter()
 
-            success_rate, video_path, final_fps = _run_rollouts(
+            rollout_metrics = _run_rollouts(
                 policy=policy,
                 env=eval_env,
                 save_dir=output_dir,
@@ -884,6 +955,9 @@ def main(cfg: argparse.Namespace):
                 num_episodes=cfg.eval_num_episodes,
                 run_start_time=run_start_time,
             )
+            success_rate = rollout_metrics["success_rate"]
+            video_path = rollout_metrics["video_path"]
+            final_fps = rollout_metrics["final_fps"]
 
             rollout_ms = (time.perf_counter() - rollout_t0) * 1000
 
@@ -896,13 +970,20 @@ def main(cfg: argparse.Namespace):
             )
 
             if wandb is not None:
-                wandb.log(
-                    {
-                        "eval/success_rate": success_rate,
-                        "time/rollout_ms": rollout_ms,
-                    },
-                    step=step,
+                eval_log = {
+                    "eval/success_rate": success_rate,
+                    "eval/mean_episode_length": rollout_metrics["mean_episode_length"],
+                    "eval/mean_successful_episode_length": rollout_metrics["mean_successful_episode_length"],
+                    "time/rollout_ms": rollout_ms,
+                }
+                eval_log.update(
+                    _build_eval_episode_length_log(
+                        episode_lengths=rollout_metrics["episode_lengths"],
+                        successes=rollout_metrics["episode_successes"],
+                        horizon=getattr(eval_env, "horizon", None),
+                    )
                 )
+                wandb.log(eval_log, step=step)
                 if video_path is not None and video_path.exists():
                     fps = eval_env.fps
                     wandb.log({"eval/rollout_video": wandb.Video(str(video_path), format="mp4", fps=fps)}, step=step)

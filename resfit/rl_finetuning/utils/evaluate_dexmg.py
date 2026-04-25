@@ -140,6 +140,56 @@ def run_dexmg_evaluation(
 
         print(f"Saved Q-trajectory plots to: {output_path}")
 
+    def _build_eval_episode_length_log(
+        *,
+        episode_lengths: list[int],
+        successes: list[bool],
+        horizon: int | None = None,
+    ) -> dict[str, object]:
+        if not episode_lengths:
+            return {}
+
+        plot_title = "RL evaluation episode lengths"
+        successful_plot_title = "RL successful evaluation episode lengths"
+        if horizon is not None:
+            plot_title = f"{plot_title} (horizon={horizon})"
+            successful_plot_title = f"{successful_plot_title} (horizon={horizon})"
+
+        rows = [[episode_idx, int(episode_length)] for episode_idx, episode_length in enumerate(episode_lengths, start=1)]
+        log_payload: dict[str, object] = {
+            "eval/episode_lengths": wandb.plot.line(
+                wandb.Table(data=rows, columns=["episode", "episode_length"]),
+                "episode",
+                "episode_length",
+                title=plot_title,
+            ),
+            "eval/max_episode_length": float(np.max(episode_lengths)),
+            "eval/min_episode_length": float(np.min(episode_lengths)),
+        }
+
+        successful_episode_lengths = [
+            int(episode_length) for episode_length, is_success in zip(episode_lengths, successes) if is_success
+        ]
+        if successful_episode_lengths:
+            successful_rows = [
+                [episode_idx, episode_length]
+                for episode_idx, episode_length in enumerate(successful_episode_lengths, start=1)
+            ]
+            log_payload.update(
+                {
+                    "eval/successful_episode_lengths": wandb.plot.line(
+                        wandb.Table(data=successful_rows, columns=["successful_episode", "episode_length"]),
+                        "successful_episode",
+                        "episode_length",
+                        title=successful_plot_title,
+                    ),
+                    "eval/max_successful_episode_length": float(np.max(successful_episode_lengths)),
+                    "eval/min_successful_episode_length": float(np.min(successful_episode_lengths)),
+                }
+            )
+
+        return log_payload
+
     # ------------------------------------------------------------------
     # Initial setup -----------------------------------------------------
     # ------------------------------------------------------------------
@@ -292,6 +342,7 @@ def run_dexmg_evaluation(
     mean_return: float = float(np.mean(returns)) if returns else 0.0
 
     # Calculate mean episode length among successful episodes
+    mean_episode_length: float = float(np.mean(all_episode_lengths)) if all_episode_lengths else 0.0
     successful_episode_lengths = [length for length, is_success in zip(all_episode_lengths, successes) if is_success]
     mean_successful_episode_length: float = (
         float(np.mean(successful_episode_lengths)) if successful_episode_lengths else 0.0
@@ -310,12 +361,21 @@ def run_dexmg_evaluation(
     metrics: dict[str, float] = {
         "eval/success_rate": success_rate,
         "eval/mean_return": mean_return,
+        "eval/mean_episode_length": mean_episode_length,
         "eval/mean_successful_episode_length": mean_successful_episode_length,
         "eval/mean_first_success_step": mean_first_success_step,
     }
 
     if wandb.run is not None:
-        wandb.log(metrics, step=global_step)
+        wandb_log = dict(metrics)
+        wandb_log.update(
+            _build_eval_episode_length_log(
+                episode_lengths=all_episode_lengths,
+                successes=successes,
+                horizon=getattr(env, "horizon", None),
+            )
+        )
+        wandb.log(wandb_log, step=global_step)
 
     # ------------------------------------------------------------------
     # 5. Q-trajectory plots --------------------------------------------
